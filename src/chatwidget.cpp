@@ -8,6 +8,7 @@
 #include <QColor>
 #include <QFont>
 #include <QMessageBox>
+#include <QTimer>
 
 ChatWidget::ChatWidget(EngineBridge *bridge, QWidget *parent)
     : QWidget(parent)
@@ -106,7 +107,21 @@ void ChatWidget::onEngineEvent(const QJsonObject &obj)
     } else if (type == QLatin1String(FlareEvent::Confirm)) {
         endStream();
         // M3-5: 确认门弹窗（允许/拒绝），按选择回传 confirm_result
-        showConfirmDialog(obj);
+        // 【重入安全】QMessageBox::exec() 会启动嵌套事件循环；若在 readyRead
+        // 信号处理栈内直接弹窗，新到达的引擎事件会重入本函数 → 崩溃风险。
+        // 因此先缓存事件，用 singleShot(0) 延迟到当前事件处理完成后再弹窗。
+        m_pendingConfirm = obj;
+        if (!m_confirmScheduled) {
+            m_confirmScheduled = true;
+            QTimer::singleShot(0, this, [this]() {
+                m_confirmScheduled = false;
+                if (!m_pendingConfirm.isEmpty()) {
+                    const QJsonObject evt = m_pendingConfirm;
+                    m_pendingConfirm = QJsonObject();
+                    showConfirmDialog(evt);
+                }
+            });
+        }
     }
 }
 

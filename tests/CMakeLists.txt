@@ -35,6 +35,10 @@ add_test(NAME memorypanel COMMAND t_memorypanel)
 add_executable(gui_capture gui_capture.cpp)
 target_link_libraries(gui_capture PRIVATE Qt6::Widgets flare_client_core)
 
-# M2 端到端验收（真实 UI 自动对话；手动运行）
+# M2 端到端验收（真实 UI 自测对话；不注册进 ctest，手动运行）
 add_executable(e2e_acceptance e2e_acceptance.cpp)
 target_link_libraries(e2e_acceptance PRIVATE Qt6::Widgets flare_client_core)
+
+# 重入安全复现（真实引擎 + 工具调用 + confirm 弹窗自动点击；手动运行）
+add_executable(reentrancy_live reentrancy_live.cpp)
+target_link_libraries(reentrancy_live PRIVATE Qt6::Widgets flare_client_core)

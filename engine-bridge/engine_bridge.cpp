@@ -164,6 +164,9 @@ void EngineBridge::queryModels()
 
 void EngineBridge::onReadyReadStdout()
 {
+    if (m_processingStdout)
+        return; // 重入保护：嵌套事件循环期间的二次读取留给外层继续
+    m_processingStdout = true;
     m_stdoutBuffer += m_process->readAllStandardOutput();
     int nl;
     while ((nl = m_stdoutBuffer.indexOf('\n')) >= 0) {
@@ -172,6 +175,7 @@ void EngineBridge::onReadyReadStdout()
         if (!line.isEmpty())
             handleLine(line);
     }
+    m_processingStdout = false;
 }
 
 void EngineBridge::onReadyReadStderr()

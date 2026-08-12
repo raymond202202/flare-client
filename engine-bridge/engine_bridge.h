@@ -97,6 +97,7 @@ private:
 
     QProcess *m_process;
     QByteArray m_stdoutBuffer;
+    bool m_processingStdout = false; // 重入保护：嵌套事件循环期间阻止二次解析
     QString m_engineVersion;
     QString m_protocolVersion;
 };

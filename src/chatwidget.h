@@ -42,6 +42,9 @@ private:
     void appendToolCard(const QString &icon, const QString &title, const QString &body);
     // M3-5 confirm 事件 → 弹窗（允许/拒绝），按选择回传 confirm_result
     void showConfirmDialog(const QJsonObject &confirmEvent);
+    // M3-5 重入安全：不在事件处理栈内弹模态框；缓存后延迟到下一事件循环 tick
+    QJsonObject m_pendingConfirm;
+    bool m_confirmScheduled = false;
 
     EngineBridge *m_bridge;
     QTextEdit *m_output;
