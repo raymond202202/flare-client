@@ -157,6 +157,11 @@ void EngineBridge::confirmResult(const QString &sessionId, const QString &id, co
     });
 }
 
+void EngineBridge::queryModels()
+{
+    sendRequest({{QStringLiteral("type"), QStringLiteral("models")}});
+}
+
 void EngineBridge::onReadyReadStdout()
 {
     m_stdoutBuffer += m_process->readAllStandardOutput();

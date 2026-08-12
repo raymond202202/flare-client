@@ -84,6 +84,8 @@ public slots:
     void getMemories(const QString &sessionId = "default");
     // M3-5 确认门回传：decision ∈ allow_once/allow_session/always/deny/alternative
     void confirmResult(const QString &sessionId, const QString &id, const QString &decision);
+    // M3-6 查询模型信息（响应 models 事件；只读，不触发生成）
+    void queryModels();
 
 private slots:
     void onReadyReadStdout();
