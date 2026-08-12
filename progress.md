@@ -22,6 +22,7 @@
 - [x] M4-3 macOS dmg：macmini 端已产出（37M），fedora 侧提供 CMake 支持验证
 - [x] M4-4 自动清理联动：打包后自动执行 cleanup-old-builds.sh（保留最新 3 个）
 - [x] M4-5 体验打磨：按用户实机反馈修复（闪退残余问题、UI 细节、易用性）
+- [x] （2026-08-13 02:10 第 15 轮核验）M4 全部完成待用户验收；飞书文档已补同步 M4 条目（revision 35）
 
 ## 迭代记录
 
@@ -42,6 +43,7 @@
 | 12 | 2026-08-12 深夜 | 夜间核验（无代码变更） | ✅ 6/6 测试 + 构建 0 错误 | 读 macmini 日志：最新条目仍为 v0.4.0-M3-7 自动跟进确认（编译 0 错 + 6/6 绿 + dmg 37M），无新问题/建议/修复请求（协作断链+清理策略回应均在日志结束标记内，无需追加回应）；progress.md 无未完成 [ ] 阶段（M3-1~M3-7 全勾选）→ 按铁律不再自循环；复验构建 0 错误 + ctest 6/6 全绿（1.79s）；git 工作区干净（HEAD=b592758），无代码变更，等待用户验收 |
 | 13 | 2026-08-13 00:25 | M4-1 + M4-3 + M4-2（部分） | ✅ 6/6 测试 + 构建 0 错误 + RPM 产出 | M4-1 Fedora RPM 打包：CMakeLists 加 CPack RPM（修复 include(CPack) 位置坑——必须在 CPACK_* 变量后）、install 规则（bin + desktop + SVG 图标）、版本 0.4.0；build-fedora.sh -p 真打 RPM → packaging/dist/ + cleanup 联动；rpm2cpio 解包验证 + offscreen 冒烟 8s 存活 PASS（commit 45af59a）。M4-3 macOS dmg CMake 支持：Darwin 分支（DragNDrop + /Applications + 卷名）已随 M4-1 提交，模拟 Darwin 交叉配置验证 CPackConfig 生效（DMG_VOLUME_NAME=Flare Client 0.4.0）。M4-2 Windows：本机无 mingw/wine 且无 sudo 装包 → 落地 GitHub Actions CI（windows-latest + aqtinstall Qt 6.7.3 MSVC + windeployqt + CPack ZIP）+ build-windows.ps1 增强（-Package 参数 windeployqt+CPack+清理）；模拟 Windows 交叉配置仅工具链链接失败、CMake 语法正常 |
 | 14 | 2026-08-13 00:33 | M4-4 + M4-5 | ✅ 6/6 测试 + 构建 0 错误 + e2e PASS + RPM 产出 | M4-4 自动清理联动：build-fedora.sh -p 实跑完整链路（构建→测试→CPack→收集→清理）；cleanup 删除逻辑实测（5 包→保留 3 删 3）；build-macos.sh 已有联动（commit 6177549）。M4-5 体验打磨：①EngineBridge 防滞留补读（嵌套事件循环期间数据未读时 singleShot 补读，防数据永久丢失）②MainWindow setMenuBar(nullptr) 显式无菜单栏 + 窗口图标（RPM 路径/开发路径双回退）③新增「⏹ 停止」按钮（流式时显示、done/error 隐藏、发 cancel 协议）+ 3 个新测试；全部 ctest 6/6 绿（chatwidget 15 子测试）+ e2e 真实对话 PASS + RPM 重打包 50K |
+| 15 | 2026-08-13 02:10 | M4 全部完成核验（无代码变更） | ✅ 6/6 测试 + 构建 0 错误 | 读 macmini 日志：最新条目仍为 v0.4.0-M3-7 自动跟进（编译 0 错 + 6/6 绿 + dmg 37M），无新问题/建议/修复请求（协作断链+清理策略回应均已在日志结束标记内）；progress.md M4-1~M4-5 已全勾选且 git 确认提交落地（45af59a M4-1/3fe1b14 M4-2/6177549 M4-4/3950a8b M4-5，M4-3 折叠于 M4-1 Darwin 分支）；复验构建 0 错误 + ctest 6/6 全绿（1.84s）；RPM 产物 packaging/dist/flare-client_0.4.0.rpm（50K）在；发现飞书文档缺 M4 条目（迭代日志最新仍为 M3-7）→ 补同步 M4 完成条目（revision 35，macmini 全文扫描可检测）；M4 全部完成 → 按铁律不再自循环，等待用户验收 |
 
 ## 构建命令（每轮必须执行）
 
