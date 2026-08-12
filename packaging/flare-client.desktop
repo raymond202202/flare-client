@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=Flare Client
+Name[zh_CN]=Flare 客户端
+GenericName=AI Agent Client
+GenericName[zh_CN]=AI Agent 客户端
+Comment=Flare AI Agent GUI Client
+Comment[zh_CN]=Flare AI Agent 图形客户端
+Exec=flare-client
+Icon=flare-client
+Terminal=false
+Categories=Utility;Network;Chat;
+StartupNotify=true
+StartupWMClass=flare-client

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(flare-client VERSION 0.1.0 LANGUAGES CXX)
+project(flare-client VERSION 0.4.0 LANGUAGES CXX)
 
 # ============================================================
 # Flare GUI 客户端 — 三平台统一 Qt 6 Widgets
@@ -53,7 +53,47 @@ if(BUILD_TESTING)
 endif()
 
 # ---------- 打包 ----------
-include(CPack)
+# 注意：include(CPack) 必须放在所有 CPACK_* 变量之后（文件末尾），
+# 否则 CPackConfig.cmake 快照不会包含这些设置（生成器会退回默认 STGZ;TGZ;TZ）。
+
+# 安装规则：可执行文件 + 桌面入口 + 图标
+install(TARGETS flare-client RUNTIME DESTINATION bin)
+install(FILES packaging/flare-client.desktop DESTINATION share/applications)
+install(FILES packaging/flare-client.svg DESTINATION share/icons/hicolor/scalable/apps)
+
+# ---------- 通用 CPack 配置 ----------
 set(CPACK_PACKAGE_NAME "flare-client")
 set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Flare AI Agent GUI Client")
+set(CPACK_PACKAGE_VENDOR "Flare")
+set(CPACK_PACKAGE_CONTACT "flare-client@example.com")
+set(CPACK_PACKAGE_DESCRIPTION "Flare AI Agent native GUI client built with Qt 6 Widgets")
+set(CPACK_PACKAGE_FILE_NAME "flare-client_${CPACK_PACKAGE_VERSION}")
+
+# 安装前缀（RPM 默认 /usr，符合系统级安装约定）
+set(CPACK_PACKAGING_INSTALL_PREFIX "/usr")
+
+# ---------- RPM 生成器 ----------
+set(CPACK_GENERATOR "RPM")
+set(CPACK_RPM_PACKAGE_GROUP "Applications/Internet")
+set(CPACK_RPM_PACKAGE_LICENSE "MIT")
+set(CPACK_RPM_PACKAGE_ARCHITECTURE "x86_64")
+# Qt 6 运行时依赖（rpm 安装时自动检查）
+set(CPACK_RPM_PACKAGE_REQUIRES "qt6-qtbase >= 6.5")
+
+# ---------- macOS DMG 支持（macmini 端已实机验证，fedora 侧提供 CMake 配置）----------
+if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+  set(CPACK_GENERATOR "DragNDrop")
+  set(CPACK_DMG_VOLUME_NAME "Flare Client ${CPACK_PACKAGE_VERSION}")
+  set(CPACK_PACKAGING_INSTALL_PREFIX "/Applications")
+  install(TARGETS flare-client BUNDLE DESTINATION .)
+endif()
+
+# ---------- Windows NSIS/zip 支持（CI/交叉编译时启用）----------
+if(WIN32)
+  set(CPACK_GENERATOR "ZIP")
+  install(TARGETS flare-client RUNTIME DESTINATION .)
+endif()
+
+# include(CPack) 必须在所有 CPACK_* 变量之后
+include(CPack)
