@@ -3,6 +3,10 @@
 #include <QLabel>
 #include <QJsonValue>
 #include <QDateTime>
+#include <QTextCursor>
+#include <QTextCharFormat>
+#include <QColor>
+#include <QFont>
 
 ChatWidget::ChatWidget(EngineBridge *bridge, QWidget *parent)
     : QWidget(parent)
@@ -54,6 +58,7 @@ void ChatWidget::sendMessage()
     const QString text = m_input->text().trimmed();
     if (text.isEmpty())
         return;
+    endStream(); // 用户新消息前结束未完成流，避免 chunk 串块
     appendMessage(QStringLiteral("你"), text);
     m_input->clear();
     m_bridge->chat(m_sessionId, text);
@@ -64,6 +69,7 @@ void ChatWidget::setSession(const QString &sessionId)
     if (sessionId.isEmpty() || sessionId == m_sessionId)
         return;
     m_sessionId = sessionId;
+    m_streaming = false;
     m_output->clear();
     m_output->setPlaceholderText(QStringLiteral("已切换到会话 ") + sessionId);
 }
@@ -73,19 +79,53 @@ void ChatWidget::onEngineEvent(const QJsonObject &obj)
     const QString type = obj.value(QStringLiteral("type")).toString();
 
     if (type == QLatin1String(FlareEvent::Text)) {
-        appendMessage(QStringLiteral("Flare"), obj.value(QStringLiteral("content")).toString());
+        QString content = obj.value(QStringLiteral("content")).toString();
+        if (content.isEmpty())
+            content = obj.value(QStringLiteral("text")).toString();
+        appendStreamChunk(content);
+    } else if (type == QLatin1String(FlareEvent::Done)) {
+        // 回复流结束：仅关闭流状态，不追加空块
+        endStream();
     } else if (type == QLatin1String(FlareEvent::Error)) {
+        endStream();
         appendMessage(QStringLiteral("⚠️ Flare"), obj.value(QStringLiteral("content")).toString());
     } else if (type == QLatin1String(FlareEvent::ToolCall)) {
+        endStream();
         appendMessage(QStringLiteral("🔧 工具"), obj.value(QStringLiteral("content")).toString());
     } else if (type == QLatin1String(FlareEvent::ToolResult)) {
+        endStream();
         appendMessage(QStringLiteral("📦 结果"), obj.value(QStringLiteral("content")).toString());
     }
 }
 
+// M3-3 流式渲染：首个 text chunk 新建「Flare：」消息块，后续 chunk 增量追加到块尾
+void ChatWidget::appendStreamChunk(const QString &chunk)
+{
+    if (chunk.isEmpty())
+        return;
+    QTextCursor cursor(m_output->document());
+    cursor.movePosition(QTextCursor::End);
+    if (!m_streaming) {
+        m_streaming = true;
+        cursor.insertBlock();
+        QTextCharFormat label;
+        label.setForeground(QColor(QStringLiteral("#6d4aff")));
+        label.setFontWeight(QFont::Bold);
+        cursor.insertText(QStringLiteral("Flare："), label);
+    }
+    cursor.insertText(chunk);
+    m_output->setTextCursor(cursor);
+    m_output->ensureCursorVisible();
+}
+
+void ChatWidget::endStream()
+{
+    m_streaming = false;
+}
+
 void ChatWidget::appendMessage(const QString &who, const QString &text)
 {
-    const QString html = QStringLiteral("<p><b style=\"color:#6d4aff;\">%1</b>：%2</p>")
+    const QString html = QStringLiteral(R"(<p><b style="color:#6d4aff;">%1</b>：%2</p>)")
                              .arg(who.toHtmlEscaped(), text.toHtmlEscaped());
     m_output->append(html);
 }

@@ -34,12 +34,16 @@ public slots:
 
 private:
     void appendMessage(const QString &who, const QString &text);
+    // M3-3 流式渲染：text 事件按 chunk 增量追加到当前消息块
+    void appendStreamChunk(const QString &chunk);
+    void endStream();
 
     EngineBridge *m_bridge;
     QTextEdit *m_output;
     QLineEdit *m_input;
     QPushButton *m_sendBtn;
     QString m_sessionId;
+    bool m_streaming = false; // 是否处于 AI 回复流中（chunk 追加目标块）
 };
 
 #endif // CHATWIDGET_H

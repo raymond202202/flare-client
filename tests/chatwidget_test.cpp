@@ -24,7 +24,17 @@ private slots:
     void sendAppendsMessage();
     void sendClearsInput();
     void mainWindowConnectsEngine();
+    void textChunksMergeIntoOneBlock();
+    void doneClosesStream();
+    void toolCallClosesStream();
+    void userMessageClosesStream();
 };
+
+// 构造一个 text 事件
+static QJsonObject textEvent(const QString &content)
+{
+    return QJsonObject{{"type", "text"}, {"content", content}};
+}
 
 void ChatWidgetTest::widgetHasInputAndOutput()
 {
@@ -60,6 +70,67 @@ void ChatWidgetTest::mainWindowConnectsEngine()
     MainWindow w;
     QVERIFY(w.engine() != nullptr);
     QVERIFY2(w.engine()->isRunning(), "MainWindow 应成功启动 flare server");
+}
+
+// M3-3: 多个 text 事件 chunk 应合并到同一个「Flare：」块（增量追加），不重复标签
+void ChatWidgetTest::textChunksMergeIntoOneBlock()
+{
+    EngineBridge bridge;
+    ChatWidget w(&bridge);
+
+    w.onEngineEvent(textEvent(QStringLiteral("你好")));
+    w.onEngineEvent(textEvent(QStringLiteral("，Flare")));
+    w.onEngineEvent(textEvent(QStringLiteral("！")));
+
+    const QString out = w.outputText();
+    QVERIFY2(out.contains(QStringLiteral("Flare：你好，Flare！")), qPrintable(out));
+    QCOMPARE(out.count(QStringLiteral("Flare：")), 1); // 标签只出现一次 → 同一消息块
+}
+
+// M3-3: done 事件结束流，后续 text 事件另起新块
+void ChatWidgetTest::doneClosesStream()
+{
+    EngineBridge bridge;
+    ChatWidget w(&bridge);
+
+    w.onEngineEvent(textEvent(QStringLiteral("第一段")));
+    w.onEngineEvent(QJsonObject{{"type", "done"}});
+    w.onEngineEvent(textEvent(QStringLiteral("第二段")));
+
+    const QString out = w.outputText();
+    QCOMPARE(out.count(QStringLiteral("Flare：")), 2); // 两个独立消息块
+}
+
+// M3-3: tool_call 事件应关闭当前流，工具卡片另起块，后续 text 再开新块
+void ChatWidgetTest::toolCallClosesStream()
+{
+    EngineBridge bridge;
+    ChatWidget w(&bridge);
+
+    w.onEngineEvent(textEvent(QStringLiteral("我来调用工具")));
+    w.onEngineEvent(QJsonObject{{"type", "tool_call"}, {"content", "search_web"}});
+    w.onEngineEvent(textEvent(QStringLiteral("结果如下")));
+
+    const QString out = w.outputText();
+    QCOMPARE(out.count(QStringLiteral("Flare：")), 2);
+    QVERIFY2(out.contains(QStringLiteral("🔧 工具")), qPrintable(out));
+}
+
+// M3-3: 用户发送新消息前自动结束未完成流，chunk 不串到用户消息块
+void ChatWidgetTest::userMessageClosesStream()
+{
+    EngineBridge bridge;
+    ChatWidget w(&bridge);
+
+    w.onEngineEvent(textEvent(QStringLiteral("回复中")));
+    w.input()->setText(QStringLiteral("打断"));
+    w.sendMessage();
+    w.onEngineEvent(textEvent(QStringLiteral("流已结束后的回复")));
+
+    const QString out = w.outputText();
+    QCOMPARE(out.count(QStringLiteral("Flare：")), 2);
+    QVERIFY2(out.contains(QStringLiteral("回复中")), qPrintable(out));
+    QVERIFY2(out.contains(QStringLiteral("流已结束后的回复")), qPrintable(out));
 }
 
 QTEST_MAIN(ChatWidgetTest)
