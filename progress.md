@@ -20,7 +20,7 @@
 - [x] M4-1 Fedora RPM 打包：CMake CPack → .rpm，安装到系统验证开始菜单可启动
 - [x] M4-2 Windows 打包流程：交叉编译/CI 方案（Qt 6 静态或 mingw），产出 exe 安装包
 - [x] M4-3 macOS dmg：macmini 端已产出（37M），fedora 侧提供 CMake 支持验证
-- [ ] M4-4 自动清理联动：打包后自动执行 cleanup-old-builds.sh（保留最新 3 个）
+- [x] M4-4 自动清理联动：打包后自动执行 cleanup-old-builds.sh（保留最新 3 个）
 - [ ] M4-5 体验打磨：按用户实机反馈修复（闪退残余问题、UI 细节、易用性）
 
 ## 迭代记录
