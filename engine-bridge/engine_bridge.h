@@ -75,6 +75,8 @@ public slots:
     void chat(const QString &sessionId, const QString &input);
     void cancel(const QString &sessionId = "default");
     void listSessions();
+    void createSession(const QString &sessionId, const QString &title);
+    void deleteSession(const QString &sessionId);
 
 private slots:
     void onReadyReadStdout();

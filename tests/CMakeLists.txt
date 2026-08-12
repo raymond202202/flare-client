@@ -21,6 +21,11 @@ add_executable(t_chatwidget chatwidget_test.cpp)
 target_link_libraries(t_chatwidget PRIVATE Qt6::Test flare_client_core)
 add_test(NAME chatwidget COMMAND t_chatwidget)
 
+# M3-1 会话列表侧边栏
+add_executable(t_sessionlist sessionlistwidget_test.cpp)
+target_link_libraries(t_sessionlist PRIVATE Qt6::Test flare_client_core)
+add_test(NAME sessionlist COMMAND t_sessionlist)
+
 # GUI 渲染验证（验收截图；手动运行: QT_QPA_PLATFORM=offscreen ./gui_capture）
 add_executable(gui_capture gui_capture.cpp)
 target_link_libraries(gui_capture PRIVATE Qt6::Widgets flare_client_core)

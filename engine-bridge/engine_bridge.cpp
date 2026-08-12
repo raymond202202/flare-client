@@ -121,6 +121,23 @@ void EngineBridge::listSessions()
     sendRequest({{QStringLiteral("type"), QStringLiteral("list_sessions")}});
 }
 
+void EngineBridge::createSession(const QString &sessionId, const QString &title)
+{
+    sendRequest({
+        {QStringLiteral("type"), QStringLiteral("create_session")},
+        {QStringLiteral("sessionId"), sessionId},
+        {QStringLiteral("title"), title},
+    });
+}
+
+void EngineBridge::deleteSession(const QString &sessionId)
+{
+    sendRequest({
+        {QStringLiteral("type"), QStringLiteral("delete_session")},
+        {QStringLiteral("sessionId"), sessionId},
+    });
+}
+
 void EngineBridge::onReadyReadStdout()
 {
     m_stdoutBuffer += m_process->readAllStandardOutput();

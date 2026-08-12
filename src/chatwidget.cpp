@@ -59,6 +59,15 @@ void ChatWidget::sendMessage()
     m_bridge->chat(m_sessionId, text);
 }
 
+void ChatWidget::setSession(const QString &sessionId)
+{
+    if (sessionId.isEmpty() || sessionId == m_sessionId)
+        return;
+    m_sessionId = sessionId;
+    m_output->clear();
+    m_output->setPlaceholderText(QStringLiteral("已切换到会话 ") + sessionId);
+}
+
 void ChatWidget::onEngineEvent(const QJsonObject &obj)
 {
     const QString type = obj.value(QStringLiteral("type")).toString();

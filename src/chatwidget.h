@@ -24,10 +24,13 @@ public:
     QLineEdit *input() const { return m_input; }
     QTextEdit *output() const { return m_output; }
     QString outputText() const { return m_output->toPlainText(); }
+    QString sessionId() const { return m_sessionId; }
 
 public slots:
     void sendMessage();
     void onEngineEvent(const QJsonObject &obj);
+    // 切换会话：更新目标会话 id，清空消息区避免串会话
+    void setSession(const QString &sessionId);
 
 private:
     void appendMessage(const QString &who, const QString &text);

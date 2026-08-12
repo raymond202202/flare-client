@@ -26,6 +26,8 @@ add_library(flare_client_core STATIC
   src/mainwindow.cpp
   src/chatwidget.h
   src/chatwidget.cpp
+  src/sessionlistwidget.h
+  src/sessionlistwidget.cpp
   engine-bridge/engine_bridge.h
   engine-bridge/engine_bridge.cpp
 )
