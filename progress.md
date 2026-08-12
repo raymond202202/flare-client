@@ -26,6 +26,7 @@
 | 5 | 2026-08-12 深夜 | M3-5 | ✅ 6/6 测试 + e2e PASS | 确认门：confirm 事件 QMessageBox 弹窗（允许/拒绝，紫配）；respondConfirm → confirm_result(allow_once/deny)；EngineBridge 增 confirmResult + requestSent 信号；弹窗只展示参数键名不泄露值 |
 | 6 | 2026-08-12 深夜 | M3-6 | ✅ 6/6 测试 + e2e PASS + models 探针 | 模型信息：启动 queryModels → 状态栏「🤖 model · provider」；只读 model/provider 字段，绝不展示 apiKey/baseURL（测试含泄密防护断言） |
 | 7 | 2026-08-12 深夜 | M3-7 | ✅ 6/6 测试 + e2e PASS + 截图 | 全量回归：ctest 6/6 全绿；e2e 真实对话 PASS；gui_capture 截图留档 docs/flare-m3-preview.png（流式块/工具卡片/模型信息演示） |
+| 8 | 2026-08-12 深夜 | 文档同步修复（无代码变更） | ✅ 6/6 测试（复验 HEAD） | M3 全阶段已完成无未完成项；macmini 已跟进至 v0.4.0-M3-7（编译 0 错 + 6/6 绿 + dmg 37M）无待处理反馈；修复飞书文档结构：M3 迭代条目（M3/M3-2/M3-1）归位第五章标记区（最新在最上）、删除文档末尾/第九章重复条目、第六章追加 2 条 fedora 回应（协作断链①②已修复 + 清理策略采纳）；git 无新提交（代码未变，HEAD=4c07b4d） |
 
 ## 构建命令（每轮必须执行）
 
