@@ -24,6 +24,8 @@ find_package(Qt6 REQUIRED COMPONENTS Widgets Test)
 add_library(flare_client_core STATIC
   src/mainwindow.h
   src/mainwindow.cpp
+  src/chatwidget.h
+  src/chatwidget.cpp
   engine-bridge/engine_bridge.h
   engine-bridge/engine_bridge.cpp
 )

@@ -1,0 +1,42 @@
+#ifndef CHATWIDGET_H
+#define CHATWIDGET_H
+
+#include <QWidget>
+#include <QTextEdit>
+#include <QLineEdit>
+#include <QPushButton>
+#include <QVBoxLayout>
+#include <memory>
+#include "engine_bridge.h"
+
+// ============================================================
+// 聊天面板（M2 最小可用 UI）
+// 消息流 + 输入框 + 发送按钮；通过 EngineBridge 与 flare server 通信
+// ============================================================
+class ChatWidget : public QWidget
+{
+    Q_OBJECT
+
+public:
+    explicit ChatWidget(EngineBridge *bridge, QWidget *parent = nullptr);
+
+    // 测试接口
+    QLineEdit *input() const { return m_input; }
+    QTextEdit *output() const { return m_output; }
+    QString outputText() const { return m_output->toPlainText(); }
+
+public slots:
+    void sendMessage();
+    void onEngineEvent(const QJsonObject &obj);
+
+private:
+    void appendMessage(const QString &who, const QString &text);
+
+    EngineBridge *m_bridge;
+    QTextEdit *m_output;
+    QLineEdit *m_input;
+    QPushButton *m_sendBtn;
+    QString m_sessionId;
+};
+
+#endif // CHATWIDGET_H

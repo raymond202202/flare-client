@@ -16,3 +16,15 @@ add_test(NAME engine_bridge COMMAND t_engine_bridge)
 # M1 冒烟（真实 chat 集成验证；不注册进 ctest，手动运行）
 add_executable(m1_smoke m1_smoke.cpp)
 target_link_libraries(m1_smoke PRIVATE Qt6::Core flare_client_core)
+
+add_executable(t_chatwidget chatwidget_test.cpp)
+target_link_libraries(t_chatwidget PRIVATE Qt6::Test flare_client_core)
+add_test(NAME chatwidget COMMAND t_chatwidget)
+
+# GUI 渲染验证（验收截图；手动运行: QT_QPA_PLATFORM=offscreen ./gui_capture）
+add_executable(gui_capture gui_capture.cpp)
+target_link_libraries(gui_capture PRIVATE Qt6::Widgets flare_client_core)
+
+# M2 端到端验收（真实 UI 自动对话；手动运行）
+add_executable(e2e_acceptance e2e_acceptance.cpp)
+target_link_libraries(e2e_acceptance PRIVATE Qt6::Widgets flare_client_core)
