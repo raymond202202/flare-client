@@ -22,6 +22,7 @@ public:
     // 测试接口
     QLineEdit *input() const { return m_input; }
     QTextEdit *output() const { return m_output; }
+    QPushButton *stopButton() const { return m_stopBtn; }
     QString outputText() const { return m_output->toPlainText(); }
     QString sessionId() const { return m_sessionId; }
 
@@ -32,6 +33,8 @@ public slots:
     void setSession(const QString &sessionId);
     // M3-5 确认门回传：弹窗允许/拒绝后调用（测试可直接调，跳过弹窗）
     void respondConfirm(const QString &id, const QString &decision);
+    // M4-5 易用性：停止当前生成（发 cancel 协议）
+    void stopGeneration();
 
 private:
     void appendMessage(const QString &who, const QString &text);
@@ -50,6 +53,7 @@ private:
     QTextEdit *m_output;
     QLineEdit *m_input;
     QPushButton *m_sendBtn;
+    QPushButton *m_stopBtn = nullptr;
     QString m_sessionId;
     bool m_streaming = false; // 是否处于 AI 回复流中（chunk 追加目标块）
 };

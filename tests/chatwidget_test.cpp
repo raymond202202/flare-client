@@ -32,6 +32,9 @@ private slots:
     void toolResultShowsCard();
     void respondConfirmSendsAllow();
     void respondConfirmSendsDeny();
+    void stopButtonShowsDuringStream();
+    void stopButtonHidesAfterDone();
+    void stopGenerationSendsCancel();
 };
 
 // 构造一个 text 事件
@@ -195,6 +198,50 @@ void ChatWidgetTest::respondConfirmSendsDeny()
     QCOMPARE(req.value("type").toString(), QString("confirm_result"));
     QCOMPARE(req.value("id").toString(), QString("cid-2"));
     QCOMPARE(req.value("decision").toString(), QString("deny"));
+}
+
+// M4-5: 流式 text 事件到达时停止按钮显示
+void ChatWidgetTest::stopButtonShowsDuringStream()
+{
+    EngineBridge bridge;
+    ChatWidget w(&bridge);
+    w.show(); // 需要真实可见状态才能断言 isVisible()
+
+    QVERIFY(!w.stopButton()->isVisible());
+    w.onEngineEvent(textEvent(QStringLiteral("开始回复")));
+    QVERIFY2(w.stopButton()->isVisible(), "流式输出中停止按钮应显示");
+}
+
+// M4-5: done 事件后停止按钮隐藏
+void ChatWidgetTest::stopButtonHidesAfterDone()
+{
+    EngineBridge bridge;
+    ChatWidget w(&bridge);
+    w.show();
+
+    w.onEngineEvent(textEvent(QStringLiteral("回复中")));
+    QVERIFY(w.stopButton()->isVisible());
+    w.onEngineEvent(QJsonObject{{"type", "done"}});
+    QVERIFY2(!w.stopButton()->isVisible(), "done 后停止按钮应隐藏");
+}
+
+// M4-5: stopGeneration() 在流式中发 cancel 协议（sessionId + type）
+void ChatWidgetTest::stopGenerationSendsCancel()
+{
+    EngineBridge bridge;
+    ChatWidget w(&bridge);
+    w.show();
+    QSignalSpy spy(&bridge, &EngineBridge::requestSent);
+
+    w.onEngineEvent(textEvent(QStringLiteral("回复中")));
+    QVERIFY(w.stopButton()->isVisible());
+    w.stopGeneration();
+    QCOMPARE(spy.count(), 1);
+    const QJsonObject req = spy.at(0).at(0).toJsonObject();
+    QCOMPARE(req.value("type").toString(), QString("cancel"));
+    QCOMPARE(req.value("sessionId").toString(), w.sessionId());
+    QVERIFY2(!w.stopButton()->isVisible(), "停止后按钮应隐藏");
+    QVERIFY2(w.outputText().contains(QStringLiteral("已请求停止")), qPrintable(w.outputText()));
 }
 
 QTEST_MAIN(ChatWidgetTest)

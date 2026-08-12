@@ -16,6 +16,7 @@ ChatWidget::ChatWidget(EngineBridge *bridge, QWidget *parent)
     , m_output(new QTextEdit(this))
     , m_input(new QLineEdit(this))
     , m_sendBtn(new QPushButton(QStringLiteral("发送"), this))
+    , m_stopBtn(new QPushButton(QStringLiteral("⏹ 停止"), this))
     , m_sessionId(QStringLiteral("gui-") + QString::number(QDateTime::currentMSecsSinceEpoch()))
 {
     auto *layout = new QVBoxLayout(this);
@@ -48,10 +49,20 @@ ChatWidget::ChatWidget(EngineBridge *bridge, QWidget *parent)
         "QPushButton:hover { background:#5a3de0; }"
         "QPushButton:pressed { background:#4b31c0; }"));
     inputRow->addWidget(m_sendBtn);
+
+    // M4-5 易用性：停止生成按钮（默认隐藏，流式输出/等待回复时显示）
+    m_stopBtn->setStyleSheet(QStringLiteral(
+        "QPushButton { background:#ffffff; color:#6d4aff; border:1px solid #d8ccff;"
+        " border-radius:8px; padding:8px 14px; font-size:14px; }"
+        "QPushButton:hover { background:#f3efff; }"
+        "QPushButton:pressed { background:#e8e0ff; }"));
+    m_stopBtn->setVisible(false);
+    inputRow->addWidget(m_stopBtn);
     layout->addLayout(inputRow);
 
     connect(m_sendBtn, &QPushButton::clicked, this, &ChatWidget::sendMessage);
     connect(m_input, &QLineEdit::returnPressed, this, &ChatWidget::sendMessage);
+    connect(m_stopBtn, &QPushButton::clicked, this, &ChatWidget::stopGeneration);
     connect(m_bridge, &EngineBridge::eventReceived, this, &ChatWidget::onEngineEvent);
 }
 
@@ -72,8 +83,20 @@ void ChatWidget::setSession(const QString &sessionId)
         return;
     m_sessionId = sessionId;
     m_streaming = false;
+    m_stopBtn->setVisible(false);
     m_output->clear();
     m_output->setPlaceholderText(QStringLiteral("已切换到会话 ") + sessionId);
+}
+
+// M4-5 易用性：停止当前生成（cancel 协议已存在，UI 暴露）
+void ChatWidget::stopGeneration()
+{
+    if (!m_streaming)
+        return;
+    endStream();
+    m_stopBtn->setVisible(false);
+    m_bridge->cancel(m_sessionId);
+    appendMessage(QStringLiteral("⏹ 已请求停止"), QStringLiteral("等待引擎取消当前回复…"));
 }
 
 void ChatWidget::onEngineEvent(const QJsonObject &obj)
@@ -84,19 +107,24 @@ void ChatWidget::onEngineEvent(const QJsonObject &obj)
         QString content = obj.value(QStringLiteral("content")).toString();
         if (content.isEmpty())
             content = obj.value(QStringLiteral("text")).toString();
+        m_stopBtn->setVisible(true); // M4-5: 流式输出中可停止
         appendStreamChunk(content);
     } else if (type == QLatin1String(FlareEvent::Done)) {
         // 回复流结束：仅关闭流状态，不追加空块
+        m_stopBtn->setVisible(false);
         endStream();
     } else if (type == QLatin1String(FlareEvent::Error)) {
+        m_stopBtn->setVisible(false);
         endStream();
         appendMessage(QStringLiteral("⚠️ Flare"), obj.value(QStringLiteral("content")).toString());
     } else if (type == QLatin1String(FlareEvent::ToolCall)) {
+        m_stopBtn->setVisible(false);
         endStream();
         // M3-4: 卡片式展示工具调用（content 即工具名）
         const QString tool = obj.value(QStringLiteral("content")).toString();
         appendToolCard(QStringLiteral("🔧"), QStringLiteral("调用工具"), tool);
     } else if (type == QLatin1String(FlareEvent::ToolResult)) {
+        m_stopBtn->setVisible(false);
         endStream();
         // M3-4: 卡片式展示工具结果（toolName + content）
         const QString toolName = obj.value(QStringLiteral("toolName")).toString();

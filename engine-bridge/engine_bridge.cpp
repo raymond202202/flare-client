@@ -1,6 +1,7 @@
 #include "engine_bridge.h"
 
 #include <QJsonDocument>
+#include <QTimer>
 #include <QDebug>
 
 // ============================================================
@@ -176,6 +177,10 @@ void EngineBridge::onReadyReadStdout()
             handleLine(line);
     }
     m_processingStdout = false;
+    // 防滞留：嵌套事件循环（如 confirm 弹窗）期间到达的数据若未被读取，
+    // 缓冲可能仍有不完整行；补一个延迟读取避免数据永久滞留。
+    if (m_process->bytesAvailable() > 0)
+        QTimer::singleShot(0, this, &EngineBridge::onReadyReadStdout);
 }
 
 void EngineBridge::onReadyReadStderr()

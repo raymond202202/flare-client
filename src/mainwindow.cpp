@@ -10,6 +10,8 @@
 #include <QVBoxLayout>
 #include <QLabel>
 #include <QJsonObject>
+#include <QIcon>
+#include <QFile>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -18,6 +20,22 @@ MainWindow::MainWindow(QWidget *parent)
     setWindowTitle(QStringLiteral("Flare"));
     resize(980, 640);
     setMinimumSize(820, 600);
+
+    // 用户铁律：无菜单栏（显式置空，避免任何平台默认菜单）
+    setMenuBar(nullptr);
+
+    // 窗口图标（RPM 安装路径 /usr/share/icons/hicolor/scalable/apps/，
+    // 开发时回退 packaging/flare-client.svg）
+    const QStringList iconCandidates = {
+        QStringLiteral("/usr/share/icons/hicolor/scalable/apps/flare-client.svg"),
+        QStringLiteral("packaging/flare-client.svg"),
+    };
+    for (const QString &path : iconCandidates) {
+        if (QFile::exists(path)) {
+            setWindowIcon(QIcon(path));
+            break;
+        }
+    }
 
     // ---- 浅色白底紫配主题（用户 UI 铁律）----
     QPalette pal = palette();
