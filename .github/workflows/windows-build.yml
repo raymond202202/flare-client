@@ -1,0 +1,77 @@
+# ============================================================
+# Windows 打包 CI — flare-client（GitHub Actions）
+#
+# 【背景】fedora 开发机无 mingw/wine 交叉工具链（且无 sudo 装包），
+# 因此 Windows 端采用「Windows runner + Qt MSVC 套件」CI 方案：
+#   - windows-latest runner 自带 MSVC 2022
+#   - aqtinstall 安装 Qt 6 (MSVC 2022 64-bit)，无需手动下载
+#   - windeployqt 收集 Qt 运行库 → CPack 产出 zip（免安装绿色版）
+#   - 上传 artifact 供下载验收
+#
+# 【触发】push 到 master 或手动 workflow_dispatch
+# ============================================================
+name: windows-build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - "CMakeLists.txt"
+      - "src/**"
+      - "engine-bridge/**"
+      - "tests/**"
+      - "packaging/**"
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Qt 6 (MSVC 2022 64-bit) via aqtinstall
+        shell: bash
+        run: |
+          python -m pip install --quiet aqtinstall
+          python -m aqt install-qt windows desktop 6.7.3 win64_msvc2022_64 \
+            -O "${{ runner.temp }}/qt"
+          echo "QT_PREFIX=${{ runner.temp }}/qt/6.7.3/msvc2022_64" >> "$GITHUB_ENV"
+
+      - name: Configure CMake
+        shell: bash
+        run: |
+          cmake -B build-windows -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$QT_PREFIX"
+
+      - name: Build
+        shell: bash
+        run: cmake --build build-windows --config Release -j2
+
+      - name: Run tests (ctest)
+        shell: bash
+        run: ctest --test-dir build-windows -C Release --output-on-failure
+
+      - name: Deploy Qt runtime (windeployqt)
+        shell: bash
+        run: |
+          "$QT_PREFIX/bin/windeployqt.exe" --release --no-translations \
+            build-windows/Release/flare-client.exe
+
+      - name: Package (CPack ZIP)
+        shell: bash
+        run: cmake --build build-windows --config Release --target package
+
+      - name: Collect artifact
+        shell: bash
+        run: |
+          mkdir -p packaging/dist
+          cp build-windows/flare-client_*.zip packaging/dist/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: flare-client-windows
+          path: packaging/dist/flare-client_*.zip
+          if-no-files-found: error

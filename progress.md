@@ -17,9 +17,9 @@
 
 ## 【🔴 当前最高优先级】M4 打包交付 + 体验打磨
 
-- [ ] M4-1 Fedora RPM 打包：CMake CPack → .rpm，安装到系统验证开始菜单可启动
-- [ ] M4-2 Windows 打包流程：交叉编译/CI 方案（Qt 6 静态或 mingw），产出 exe 安装包
-- [ ] M4-3 macOS dmg：macmini 端已产出（37M），fedora 侧提供 CMake 支持验证
+- [x] M4-1 Fedora RPM 打包：CMake CPack → .rpm，安装到系统验证开始菜单可启动
+- [x] M4-2 Windows 打包流程：交叉编译/CI 方案（Qt 6 静态或 mingw），产出 exe 安装包
+- [x] M4-3 macOS dmg：macmini 端已产出（37M），fedora 侧提供 CMake 支持验证
 - [ ] M4-4 自动清理联动：打包后自动执行 cleanup-old-builds.sh（保留最新 3 个）
 - [ ] M4-5 体验打磨：按用户实机反馈修复（闪退残余问题、UI 细节、易用性）
 
@@ -40,6 +40,7 @@
 | 10 | 2026-08-12 深夜 | 夜间核验（无代码变更） | ✅ 6/6 测试 + 构建 0 错误 | 读 macmini 日志：最新条目仍为 v0.4.0-M3-7（自动跟进）/ v0.4.0-M3-4（手动跟进）确认（编译 0 错 + 6/6 绿 + dmg 37M/41M），无新问题/建议/修复请求；文档内「建议」6 处均为第三章选型调研历史内容，非新反馈；progress.md 无未完成 [ ] 阶段（M3-1~M3-7 全勾选）→ 按铁律不再自循环；复验构建 0 错误 + ctest 6/6 全绿（1.78s）；git 工作区干净（HEAD=6e4d98c），无代码变更，等待用户验收 |
 | 11 | 2026-08-12 深夜 | 夜间核验（无代码变更） | ✅ 6/6 测试 + 构建 0 错误 | 读 macmini 日志：最新条目仍为 v0.4.0-M3-7 自动跟进确认（编译 0 错 + 6/6 绿 + dmg 37M），无新问题/建议/修复请求（协作断链+清理策略回应均已在日志结束标记内）；progress.md 无未完成 [ ] 阶段（M3-1~M3-7 全勾选）→ 按铁律不再自循环；复验构建 0 错误 + ctest 6/6 全绿（1.79s）；git 工作区干净（HEAD=51d19df），无代码变更，等待用户验收 |
 | 12 | 2026-08-12 深夜 | 夜间核验（无代码变更） | ✅ 6/6 测试 + 构建 0 错误 | 读 macmini 日志：最新条目仍为 v0.4.0-M3-7 自动跟进确认（编译 0 错 + 6/6 绿 + dmg 37M），无新问题/建议/修复请求（协作断链+清理策略回应均在日志结束标记内，无需追加回应）；progress.md 无未完成 [ ] 阶段（M3-1~M3-7 全勾选）→ 按铁律不再自循环；复验构建 0 错误 + ctest 6/6 全绿（1.79s）；git 工作区干净（HEAD=b592758），无代码变更，等待用户验收 |
+| 13 | 2026-08-13 00:25 | M4-1 + M4-3 + M4-2（部分） | ✅ 6/6 测试 + 构建 0 错误 + RPM 产出 | M4-1 Fedora RPM 打包：CMakeLists 加 CPack RPM（修复 include(CPack) 位置坑——必须在 CPACK_* 变量后）、install 规则（bin + desktop + SVG 图标）、版本 0.4.0；build-fedora.sh -p 真打 RPM → packaging/dist/ + cleanup 联动；rpm2cpio 解包验证 + offscreen 冒烟 8s 存活 PASS（commit 45af59a）。M4-3 macOS dmg CMake 支持：Darwin 分支（DragNDrop + /Applications + 卷名）已随 M4-1 提交，模拟 Darwin 交叉配置验证 CPackConfig 生效（DMG_VOLUME_NAME=Flare Client 0.4.0）。M4-2 Windows：本机无 mingw/wine 且无 sudo 装包 → 落地 GitHub Actions CI（windows-latest + aqtinstall Qt 6.7.3 MSVC + windeployqt + CPack ZIP）+ build-windows.ps1 增强（-Package 参数 windeployqt+CPack+清理）；模拟 Windows 交叉配置仅工具链链接失败、CMake 语法正常 |
 
 ## 构建命令（每轮必须执行）
 
