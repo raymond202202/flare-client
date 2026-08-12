@@ -1,0 +1,25 @@
+# 构建产物
+build-*/
+cmake-build-*/
+
+# Qt / IDE
+*.user
+*.autosave
+.vscode/
+.idea/
+.cache/
+
+# 数据与密钥
+*.db
+*.db-journal
+.env
+*.key
+*.pem
+
+# macOS
+.DS_Store
+
+# 打包临时
+packaging/*.dmg
+packaging/*.rpm
+packaging/*.exe
