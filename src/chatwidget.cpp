@@ -7,6 +7,7 @@
 #include <QTextCharFormat>
 #include <QColor>
 #include <QFont>
+#include <QMessageBox>
 
 ChatWidget::ChatWidget(EngineBridge *bridge, QWidget *parent)
     : QWidget(parent)
@@ -102,6 +103,10 @@ void ChatWidget::onEngineEvent(const QJsonObject &obj)
         if (result.isEmpty())
             result = obj.value(QStringLiteral("result")).toString();
         appendToolCard(QStringLiteral("📦"), toolName.isEmpty() ? QStringLiteral("工具结果") : toolName, result);
+    } else if (type == QLatin1String(FlareEvent::Confirm)) {
+        endStream();
+        // M3-5: 确认门弹窗（允许/拒绝），按选择回传 confirm_result
+        showConfirmDialog(obj);
     }
 }
 
@@ -147,6 +152,52 @@ void ChatWidget::appendToolCard(const QString &icon, const QString &title, const
     cursor.insertBlock();
     m_output->setTextCursor(cursor);
     m_output->ensureCursorVisible();
+}
+
+// M3-5: 确认门弹窗 —— 浅色紫配 QMessageBox，允许=allow_once / 拒绝=deny
+void ChatWidget::showConfirmDialog(const QJsonObject &confirmEvent)
+{
+    const QString id = confirmEvent.value(QStringLiteral("id")).toString();
+    const QString tool = confirmEvent.value(QStringLiteral("name")).toString();
+    const QString desc = confirmEvent.value(QStringLiteral("description")).toString();
+
+    // 只展示参数键名（不含值），避免敏感信息暴露
+    QStringList argKeys;
+    const QJsonObject args = confirmEvent.value(QStringLiteral("args")).toObject();
+    for (auto it = args.constBegin(); it != args.constEnd(); ++it)
+        argKeys << it.key();
+
+    QString text = QStringLiteral("AI 想调用工具「%1」").arg(tool.isEmpty() ? QStringLiteral("未知") : tool);
+    if (!desc.isEmpty())
+        text += QStringLiteral("\n说明：%1").arg(desc);
+    if (!argKeys.isEmpty())
+        text += QStringLiteral("\n参数：%1").arg(argKeys.join(QStringLiteral(", ")));
+
+    QMessageBox box(this);
+    box.setWindowTitle(QStringLiteral("确认操作"));
+    box.setText(text);
+    box.setStyleSheet(QStringLiteral(
+        "QMessageBox { background:#ffffff; }"
+        "QLabel { color:#2b2b40; font-size:14px; }"
+        "QPushButton { background:#6d4aff; color:white; border:none; border-radius:6px;"
+        " padding:6px 16px; font-size:14px; }"
+        "QPushButton:hover { background:#5a3de0; }"));
+    QPushButton *allowBtn = box.addButton(QStringLiteral("允许"), QMessageBox::AcceptRole);
+    box.addButton(QStringLiteral("拒绝"), QMessageBox::RejectRole);
+    box.setDefaultButton(allowBtn);
+    box.exec();
+
+    const QString decision = (box.clickedButton() == allowBtn)
+                                 ? QStringLiteral("allow_once")
+                                 : QStringLiteral("deny");
+    respondConfirm(id, decision);
+}
+
+void ChatWidget::respondConfirm(const QString &id, const QString &decision)
+{
+    if (id.isEmpty())
+        return;
+    m_bridge->confirmResult(m_sessionId, id, decision);
 }
 
 void ChatWidget::appendMessage(const QString &who, const QString &text)

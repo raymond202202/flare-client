@@ -9,7 +9,7 @@
 - [x] M3-1 会话列表侧边栏：list_sessions 加载 + 新建/切换/删除会话（create_session/delete_session 协议）
 - [x] M3-2 记忆查看面板：get_memories 加载 + 展示（协议已支持）
 - [x] M3-3 流式渲染优化：text 事件增量追加（当前是整段 append，改为 chunk 级增量显示）
-- [ ] M3-4 工具调用可视化：tool_call/tool_result 卡片式展示（🔧工具名 + 📦结果）
+- [x] M3-4 工具调用可视化：tool_call/tool_result 卡片式展示（🔧工具名 + 📦结果）
 - [ ] M3-5 确认门：confirm 事件弹窗（允许/拒绝按钮）+ confirm_result 回传（协议已支持）
 - [ ] M3-6 模型信息：启动时 models 请求展示当前模型/provider（仅显示，不泄露 key）
 - [ ] M3-7 全量测试回归：ctest 全绿 + e2e 冒烟 PASS + 截图留档
@@ -22,6 +22,7 @@
 | 1 | 2026-08-12 深夜 | M3-1 | ✅ 5/5 测试 + e2e PASS | SessionListWidget 侧边栏；EngineBridge 增 create/delete_session；真实引擎 create→list→delete 往返测试 |
 | 2 | 2026-08-12 深夜 | M3-2 | ✅ 6/6 测试 + e2e PASS | MemoryPanel 记忆查看；EngineBridge 增 get_memories；侧边栏「🧠 记忆」入口 → 弹窗；真实 get_memories 往返 |
 | 3 | 2026-08-12 深夜 | M3-3 | ✅ 6/6 测试 + e2e PASS | 流式渲染：text chunk 增量追加同块（QTextCursor + 紫色标签）；done/tool_call/error/用户新消息自动闭合流；4 个新流式测试 |
+| 4 | 2026-08-12 深夜 | M3-4 | ✅ 6/6 测试 + e2e PASS | 工具卡片：tool_call → 🔧调用工具+工具名；tool_result → 📦工具名+结果；浅紫底圆角卡片 insertHtml；2 个新卡片测试 |
 
 ## 构建命令（每轮必须执行）
 

@@ -30,6 +30,8 @@ private slots:
     void userMessageClosesStream();
     void toolCallShowsCard();
     void toolResultShowsCard();
+    void respondConfirmSendsAllow();
+    void respondConfirmSendsDeny();
 };
 
 // 构造一个 text 事件
@@ -162,6 +164,37 @@ void ChatWidgetTest::toolResultShowsCard()
     const QString out = w.outputText();
     QVERIFY2(out.contains(QStringLiteral("📦 search_web")), qPrintable(out));
     QVERIFY2(out.contains(QStringLiteral("找到 3 条结果")), qPrintable(out));
+}
+
+// M3-5: respondConfirm(allow_once) → confirm_result 请求（带 sessionId/id/decision）
+void ChatWidgetTest::respondConfirmSendsAllow()
+{
+    EngineBridge bridge;
+    ChatWidget w(&bridge);
+    QSignalSpy spy(&bridge, &EngineBridge::requestSent);
+
+    w.respondConfirm(QStringLiteral("cid-1"), QStringLiteral("allow_once"));
+    QCOMPARE(spy.count(), 1);
+    const QJsonObject req = spy.at(0).at(0).toJsonObject();
+    QCOMPARE(req.value("type").toString(), QString("confirm_result"));
+    QCOMPARE(req.value("sessionId").toString(), w.sessionId());
+    QCOMPARE(req.value("id").toString(), QString("cid-1"));
+    QCOMPARE(req.value("decision").toString(), QString("allow_once"));
+}
+
+// M3-5: respondConfirm(deny) → confirm_result 拒绝
+void ChatWidgetTest::respondConfirmSendsDeny()
+{
+    EngineBridge bridge;
+    ChatWidget w(&bridge);
+    QSignalSpy spy(&bridge, &EngineBridge::requestSent);
+
+    w.respondConfirm(QStringLiteral("cid-2"), QStringLiteral("deny"));
+    QCOMPARE(spy.count(), 1);
+    const QJsonObject req = spy.at(0).at(0).toJsonObject();
+    QCOMPARE(req.value("type").toString(), QString("confirm_result"));
+    QCOMPARE(req.value("id").toString(), QString("cid-2"));
+    QCOMPARE(req.value("decision").toString(), QString("deny"));
 }
 
 QTEST_MAIN(ChatWidgetTest)

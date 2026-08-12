@@ -84,6 +84,7 @@ QString EngineBridge::protocolVersion() const
 
 void EngineBridge::sendRequest(const QJsonObject &req)
 {
+    emit requestSent(req); // 诊断/测试：无论进程状态都记录请求
     if (m_process->state() != QProcess::Running)
         return;
     m_process->write(buildRequest(req));
@@ -143,6 +144,16 @@ void EngineBridge::getMemories(const QString &sessionId)
     sendRequest({
         {QStringLiteral("type"), QStringLiteral("get_memories")},
         {QStringLiteral("sessionId"), sessionId},
+    });
+}
+
+void EngineBridge::confirmResult(const QString &sessionId, const QString &id, const QString &decision)
+{
+    sendRequest({
+        {QStringLiteral("type"), QStringLiteral("confirm_result")},
+        {QStringLiteral("sessionId"), sessionId},
+        {QStringLiteral("id"), id},
+        {QStringLiteral("decision"), decision},
     });
 }
 

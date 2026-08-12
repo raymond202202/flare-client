@@ -65,6 +65,8 @@ public:
 signals:
     // 每个 stdout 事件（含 chat 流式事件），obj = 完整 JSON
     void eventReceived(const QJsonObject &obj);
+    // 每条发出的协议请求（测试/诊断用）
+    void requestSent(const QJsonObject &req);
     void processExited(int exitCode);
     void processError(const QString &message);
 
@@ -80,6 +82,8 @@ public slots:
     void createSession(const QString &sessionId, const QString &title);
     void deleteSession(const QString &sessionId);
     void getMemories(const QString &sessionId = "default");
+    // M3-5 确认门回传：decision ∈ allow_once/allow_session/always/deny/alternative
+    void confirmResult(const QString &sessionId, const QString &id, const QString &decision);
 
 private slots:
     void onReadyReadStdout();

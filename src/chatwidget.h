@@ -8,7 +8,6 @@
 #include <QVBoxLayout>
 #include <memory>
 #include "engine_bridge.h"
-
 // ============================================================
 // 聊天面板（M2 最小可用 UI）
 // 消息流 + 输入框 + 发送按钮；通过 EngineBridge 与 flare server 通信
@@ -31,6 +30,8 @@ public slots:
     void onEngineEvent(const QJsonObject &obj);
     // 切换会话：更新目标会话 id，清空消息区避免串会话
     void setSession(const QString &sessionId);
+    // M3-5 确认门回传：弹窗允许/拒绝后调用（测试可直接调，跳过弹窗）
+    void respondConfirm(const QString &id, const QString &decision);
 
 private:
     void appendMessage(const QString &who, const QString &text);
@@ -39,6 +40,8 @@ private:
     void endStream();
     // M3-4 工具调用/结果卡片式展示（浅色紫底卡片）
     void appendToolCard(const QString &icon, const QString &title, const QString &body);
+    // M3-5 confirm 事件 → 弹窗（允许/拒绝），按选择回传 confirm_result
+    void showConfirmDialog(const QJsonObject &confirmEvent);
 
     EngineBridge *m_bridge;
     QTextEdit *m_output;
