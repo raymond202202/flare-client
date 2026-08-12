@@ -6,7 +6,7 @@
 
 ## 【🔴 当前最高优先级】M3 完整功能迭代（按序）
 
-- [ ] M3-1 会话列表侧边栏：list_sessions 加载 + 新建/切换/删除会话（create_session/delete_session 协议）
+- [x] M3-1 会话列表侧边栏：list_sessions 加载 + 新建/切换/删除会话（create_session/delete_session 协议）
 - [ ] M3-2 记忆查看面板：get_memories 加载 + 展示（协议已支持）
 - [ ] M3-3 流式渲染优化：text 事件增量追加（当前是整段 append，改为 chunk 级增量显示）
 - [ ] M3-4 工具调用可视化：tool_call/tool_result 卡片式展示（🔧工具名 + 📦结果）
@@ -19,6 +19,7 @@
 | 轮次 | 时间 | 完成 | 构建 | 备注 |
 |------|------|------|------|------|
 | (基线) | 2026-08-12 13:05 | M0-M2 | ✅ 4/4 测试 | 手动完成 |
+| 1 | 2026-08-12 深夜 | M3-1 | ✅ 5/5 测试 + e2e PASS | SessionListWidget 侧边栏；EngineBridge 增 create/delete_session；真实引擎 create→list→delete 往返测试 |
 
 ## 构建命令（每轮必须执行）
 

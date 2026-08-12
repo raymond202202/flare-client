@@ -24,6 +24,7 @@ public:
     QListWidget *list() const { return m_list; }
     QPushButton *newButton() const { return m_newBtn; }
     QPushButton *deleteButton() const { return m_delBtn; }
+    QPushButton *memoryButton() const { return m_memoryBtn; }
     QString currentSessionId() const;
     int count() const { return m_list->count(); }
 
@@ -34,6 +35,8 @@ public slots:
 signals:
     // 用户点选某个会话（携带协议 sessionId）
     void sessionSelected(const QString &sessionId);
+    // 用户点击「记忆」入口
+    void memoryRequested();
 
 private slots:
     void onCreateClicked();
@@ -47,6 +50,7 @@ private:
     QListWidget *m_list;
     QPushButton *m_newBtn;
     QPushButton *m_delBtn;
+    QPushButton *m_memoryBtn;
 };
 
 #endif // SESSIONLISTWIDGET_H

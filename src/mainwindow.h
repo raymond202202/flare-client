@@ -22,6 +22,10 @@ public:
     EngineBridge *engine() const { return m_engine.get(); }
     SessionListWidget *sessions() const { return m_sessions; }
 
+private slots:
+    // 打开记忆查看弹窗（M3-2）
+    void openMemoryPanel();
+
 private:
     std::unique_ptr<EngineBridge> m_engine;
     ChatWidget *m_chat = nullptr;

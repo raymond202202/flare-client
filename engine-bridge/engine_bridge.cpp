@@ -138,6 +138,14 @@ void EngineBridge::deleteSession(const QString &sessionId)
     });
 }
 
+void EngineBridge::getMemories(const QString &sessionId)
+{
+    sendRequest({
+        {QStringLiteral("type"), QStringLiteral("get_memories")},
+        {QStringLiteral("sessionId"), sessionId},
+    });
+}
+
 void EngineBridge::onReadyReadStdout()
 {
     m_stdoutBuffer += m_process->readAllStandardOutput();

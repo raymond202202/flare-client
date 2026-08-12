@@ -31,6 +31,8 @@ inline const char *Ok          = "ok";
 inline const char *Pong        = "pong";
 inline const char *Version     = "version";
 inline const char *Sessions    = "sessions";
+inline const char *Memories    = "memories";
+inline const char *Models      = "models";
 inline const char *Confirm     = "confirm";
 inline const char *ToolExecute = "tool_execute";
 } // namespace FlareEvent
@@ -77,6 +79,7 @@ public slots:
     void listSessions();
     void createSession(const QString &sessionId, const QString &title);
     void deleteSession(const QString &sessionId);
+    void getMemories(const QString &sessionId = "default");
 
 private slots:
     void onReadyReadStdout();

@@ -1,10 +1,13 @@
 #include "mainwindow.h"
 #include "chatwidget.h"
 #include "sessionlistwidget.h"
+#include "memorypanel.h"
 
 #include <QStatusBar>
 #include <QSplitter>
 #include <QHBoxLayout>
+#include <QDialog>
+#include <QVBoxLayout>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -38,6 +41,9 @@ MainWindow::MainWindow(QWidget *parent)
     // 侧边栏选中会话 → 聊天面板切换目标会话
     connect(m_sessions, &SessionListWidget::sessionSelected,
             m_chat, &ChatWidget::setSession);
+    // 侧边栏「记忆」→ 弹出记忆面板
+    connect(m_sessions, &SessionListWidget::memoryRequested,
+            this, &MainWindow::openMemoryPanel);
 
     // 启动 flare server（后台，不阻塞 UI）
     if (m_engine->start()) {
@@ -47,6 +53,21 @@ MainWindow::MainWindow(QWidget *parent)
     } else {
         statusBar()->showMessage(QStringLiteral("⚠️ Flare 引擎启动失败（请确认 flare 已安装）"));
     }
+}
+
+void MainWindow::openMemoryPanel()
+{
+    auto *dlg = new QDialog(this);
+    dlg->setWindowTitle(QStringLiteral("记忆"));
+    dlg->setModal(false);
+    dlg->resize(420, 480);
+    auto *panel = new MemoryPanel(m_engine.get(), dlg);
+    auto *layout = new QVBoxLayout(dlg);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->addWidget(panel);
+    dlg->setAttribute(Qt::WA_DeleteOnClose);
+    dlg->show();
+    panel->refresh();
 }
 
 MainWindow::~MainWindow() = default;

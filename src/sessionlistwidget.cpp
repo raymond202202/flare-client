@@ -14,6 +14,7 @@ SessionListWidget::SessionListWidget(EngineBridge *bridge, QWidget *parent)
     , m_list(new QListWidget(this))
     , m_newBtn(new QPushButton(QStringLiteral("＋ 新建"), this))
     , m_delBtn(new QPushButton(QStringLiteral("删除"), this))
+    , m_memoryBtn(new QPushButton(QStringLiteral("🧠 记忆"), this))
 {
     setFixedWidth(kSidebarWidth);
 
@@ -49,9 +50,17 @@ SessionListWidget::SessionListWidget(EngineBridge *bridge, QWidget *parent)
     btnRow->addWidget(m_delBtn, 1);
     layout->addLayout(btnRow);
 
+    // 记忆入口（M3-2）
+    m_memoryBtn->setStyleSheet(QStringLiteral(
+        "QPushButton { background:#ffffff; color:#6d4aff; border:1px solid #d9d2f7;"
+        " border-radius:6px; padding:6px 10px; font-size:13px; }"
+        "QPushButton:hover { background:#f4f2ff; }"));
+    layout->addWidget(m_memoryBtn);
+
     connect(m_bridge, &EngineBridge::eventReceived, this, &SessionListWidget::onEngineEvent);
     connect(m_newBtn, &QPushButton::clicked, this, &SessionListWidget::onCreateClicked);
     connect(m_delBtn, &QPushButton::clicked, this, &SessionListWidget::onDeleteClicked);
+    connect(m_memoryBtn, &QPushButton::clicked, this, &SessionListWidget::memoryRequested);
     connect(m_list, &QListWidget::itemClicked, this, &SessionListWidget::onItemClicked);
 }
 
