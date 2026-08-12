@@ -25,7 +25,7 @@ public:
     // M3-6: 当前模型信息显示文本（状态栏），如 "deepseek-chat · deepseek"
     QString modelInfoText() const { return m_modelInfo; }
 
-private slots:
+public slots:
     // 打开记忆查看弹窗（M3-2）
     void openMemoryPanel();
     // M3-6: 解析 models 事件，仅展示 model/provider（不泄露 key/baseURL）

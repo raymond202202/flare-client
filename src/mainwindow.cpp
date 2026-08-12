@@ -8,6 +8,8 @@
 #include <QHBoxLayout>
 #include <QDialog>
 #include <QVBoxLayout>
+#include <QLabel>
+#include <QJsonObject>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -44,14 +46,49 @@ MainWindow::MainWindow(QWidget *parent)
     // 侧边栏「记忆」→ 弹出记忆面板
     connect(m_sessions, &SessionListWidget::memoryRequested,
             this, &MainWindow::openMemoryPanel);
+    // M3-6: 引擎事件 → 解析 models 展示模型信息
+    connect(m_engine.get(), &EngineBridge::eventReceived,
+            this, &MainWindow::onEngineEvent);
+
+    // M3-6: 状态栏右侧模型信息标签（只显示 model/provider）
+    m_modelLabel = new QLabel(QStringLiteral("🤖 模型加载中…"), this);
+    m_modelLabel->setStyleSheet(QStringLiteral("color:#6d4aff; padding:0 8px;"));
+    statusBar()->addPermanentWidget(m_modelLabel);
 
     // 启动 flare server（后台，不阻塞 UI）
     if (m_engine->start()) {
         statusBar()->showMessage(QStringLiteral("Flare 引擎已连接"));
         m_engine->queryVersion();
+        m_engine->queryModels();
         m_sessions->refresh();
     } else {
         statusBar()->showMessage(QStringLiteral("⚠️ Flare 引擎启动失败（请确认 flare 已安装）"));
+    }
+}
+
+// M3-6: models 事件 → 提取 configured.main 的 model + provider，仅展示这两项
+// 安全：绝不读取/显示 apiKey、baseURL 等敏感字段
+void MainWindow::onEngineEvent(const QJsonObject &obj)
+{
+    if (obj.value(QStringLiteral("type")).toString() != QLatin1String(FlareEvent::Models))
+        return;
+    const QJsonObject configured = obj.value(QStringLiteral("configured")).toObject();
+    const QJsonObject main = configured.value(QStringLiteral("main")).toObject();
+    const QString model = main.value(QStringLiteral("model")).toString();
+    const QString provider = main.value(QStringLiteral("provider")).toString();
+
+    QString info;
+    if (!model.isEmpty()) {
+        info = model;
+        if (!provider.isEmpty())
+            info += QStringLiteral(" · ") + provider;
+    }
+    if (info.isEmpty()) {
+        info = QStringLiteral("模型信息不可用");
+    } else {
+        m_modelInfo = info;
+        if (m_modelLabel)
+            m_modelLabel->setText(QStringLiteral("🤖 ") + info);
     }
 }
 
