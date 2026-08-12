@@ -24,9 +24,11 @@ find_package(Qt6 REQUIRED COMPONENTS Widgets Test)
 add_library(flare_client_core STATIC
   src/mainwindow.h
   src/mainwindow.cpp
+  engine-bridge/engine_bridge.h
+  engine-bridge/engine_bridge.cpp
 )
 target_link_libraries(flare_client_core PUBLIC Qt6::Widgets)
-target_include_directories(flare_client_core PUBLIC src)
+target_include_directories(flare_client_core PUBLIC src engine-bridge)
 
 # ---------- 主程序 ----------
 add_executable(flare-client src/main.cpp)
