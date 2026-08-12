@@ -28,6 +28,8 @@ private slots:
     void doneClosesStream();
     void toolCallClosesStream();
     void userMessageClosesStream();
+    void toolCallShowsCard();
+    void toolResultShowsCard();
 };
 
 // 构造一个 text 事件
@@ -113,7 +115,7 @@ void ChatWidgetTest::toolCallClosesStream()
 
     const QString out = w.outputText();
     QCOMPARE(out.count(QStringLiteral("Flare：")), 2);
-    QVERIFY2(out.contains(QStringLiteral("🔧 工具")), qPrintable(out));
+    QVERIFY2(out.contains(QStringLiteral("🔧 调用工具")), qPrintable(out));
 }
 
 // M3-3: 用户发送新消息前自动结束未完成流，chunk 不串到用户消息块
@@ -131,6 +133,35 @@ void ChatWidgetTest::userMessageClosesStream()
     QCOMPARE(out.count(QStringLiteral("Flare：")), 2);
     QVERIFY2(out.contains(QStringLiteral("回复中")), qPrintable(out));
     QVERIFY2(out.contains(QStringLiteral("流已结束后的回复")), qPrintable(out));
+}
+
+// M3-4: tool_call 事件 → 卡片（🔧 调用工具 + 工具名）
+void ChatWidgetTest::toolCallShowsCard()
+{
+    EngineBridge bridge;
+    ChatWidget w(&bridge);
+
+    w.onEngineEvent(QJsonObject{{"type", "tool_call"}, {"content", "search_web"}});
+
+    const QString out = w.outputText();
+    QVERIFY2(out.contains(QStringLiteral("🔧 调用工具")), qPrintable(out));
+    QVERIFY2(out.contains(QStringLiteral("search_web")), qPrintable(out));
+}
+
+// M3-4: tool_result 事件 → 卡片（📦 工具名 + 结果内容）
+void ChatWidgetTest::toolResultShowsCard()
+{
+    EngineBridge bridge;
+    ChatWidget w(&bridge);
+
+    w.onEngineEvent(QJsonObject{
+        {"type", "tool_result"},
+        {"toolName", "search_web"},
+        {"content", "找到 3 条结果"}});
+
+    const QString out = w.outputText();
+    QVERIFY2(out.contains(QStringLiteral("📦 search_web")), qPrintable(out));
+    QVERIFY2(out.contains(QStringLiteral("找到 3 条结果")), qPrintable(out));
 }
 
 QTEST_MAIN(ChatWidgetTest)

@@ -91,10 +91,17 @@ void ChatWidget::onEngineEvent(const QJsonObject &obj)
         appendMessage(QStringLiteral("⚠️ Flare"), obj.value(QStringLiteral("content")).toString());
     } else if (type == QLatin1String(FlareEvent::ToolCall)) {
         endStream();
-        appendMessage(QStringLiteral("🔧 工具"), obj.value(QStringLiteral("content")).toString());
+        // M3-4: 卡片式展示工具调用（content 即工具名）
+        const QString tool = obj.value(QStringLiteral("content")).toString();
+        appendToolCard(QStringLiteral("🔧"), QStringLiteral("调用工具"), tool);
     } else if (type == QLatin1String(FlareEvent::ToolResult)) {
         endStream();
-        appendMessage(QStringLiteral("📦 结果"), obj.value(QStringLiteral("content")).toString());
+        // M3-4: 卡片式展示工具结果（toolName + content）
+        const QString toolName = obj.value(QStringLiteral("toolName")).toString();
+        QString result = obj.value(QStringLiteral("content")).toString();
+        if (result.isEmpty())
+            result = obj.value(QStringLiteral("result")).toString();
+        appendToolCard(QStringLiteral("📦"), toolName.isEmpty() ? QStringLiteral("工具结果") : toolName, result);
     }
 }
 
@@ -121,6 +128,25 @@ void ChatWidget::appendStreamChunk(const QString &chunk)
 void ChatWidget::endStream()
 {
     m_streaming = false;
+}
+
+// M3-4: 工具调用/结果卡片 —— 浅紫底 + 圆角边框 + 图标标题 + 等宽内容
+void ChatWidget::appendToolCard(const QString &icon, const QString &title, const QString &body)
+{
+    QTextCursor cursor(m_output->document());
+    cursor.movePosition(QTextCursor::End);
+    cursor.insertBlock();
+    const QString html = QStringLiteral(
+        "<table width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\"><tr><td "
+        "style=\"background:#f3efff;border:1px solid #d8ccff;border-radius:8px;padding:6px 10px;\">"
+        "<b style=\"color:#6d4aff;\">%1 %2</b>"
+        "<br/><span style=\"color:#4a4a6a;font-family:monospace;\">%3</span>"
+        "</td></tr></table>")
+                             .arg(icon, title.toHtmlEscaped(), body.toHtmlEscaped());
+    cursor.insertHtml(html);
+    cursor.insertBlock();
+    m_output->setTextCursor(cursor);
+    m_output->ensureCursorVisible();
 }
 
 void ChatWidget::appendMessage(const QString &who, const QString &text)

@@ -37,6 +37,8 @@ private:
     // M3-3 流式渲染：text 事件按 chunk 增量追加到当前消息块
     void appendStreamChunk(const QString &chunk);
     void endStream();
+    // M3-4 工具调用/结果卡片式展示（浅色紫底卡片）
+    void appendToolCard(const QString &icon, const QString &title, const QString &body);
 
     EngineBridge *m_bridge;
     QTextEdit *m_output;
