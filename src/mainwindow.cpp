@@ -3,6 +3,7 @@
 #include "sessionlistwidget.h"
 #include "memorypanel.h"
 #include "skillpanel.h"
+#include "settingspanel.h"
 
 #include <QStatusBar>
 #include <QSplitter>
@@ -72,6 +73,9 @@ MainWindow::MainWindow(QWidget *parent)
     // M5-3 侧边栏「技能」→ 弹出技能面板
     connect(m_sessions, &SessionListWidget::skillRequested,
             this, &MainWindow::openSkillPanel);
+    // M6-2 侧边栏「设置」→ 弹出设置面板
+    connect(m_sessions, &SessionListWidget::settingsRequested,
+            this, &MainWindow::openSettingsPanel);
     // M3-6: 引擎事件 → 解析 models 展示模型信息
     connect(m_engine.get(), &EngineBridge::eventReceived,
             this, &MainWindow::onEngineEvent);
@@ -146,6 +150,19 @@ void MainWindow::openSkillPanel()
     dlg->setAttribute(Qt::WA_DeleteOnClose);
     dlg->show();
     panel->refresh();
+}
+
+void MainWindow::openSettingsPanel()
+{
+    auto *dlg = new QDialog(this);
+    dlg->setWindowTitle(QStringLiteral("设置"));
+    dlg->setModal(true);
+    dlg->resize(440, 320);
+    auto *panel = new SettingsPanel(dlg);
+    auto *layout = new QVBoxLayout(dlg);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->addWidget(panel);
+    dlg->exec();
 }
 
 MainWindow::~MainWindow() = default;

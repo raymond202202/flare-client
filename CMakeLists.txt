@@ -32,6 +32,8 @@ add_library(flare_client_core STATIC
   src/memorypanel.cpp
   src/skillpanel.h
   src/skillpanel.cpp
+  src/settingspanel.h
+  src/settingspanel.cpp
   engine-bridge/engine_bridge.h
   engine-bridge/engine_bridge.cpp
 )
