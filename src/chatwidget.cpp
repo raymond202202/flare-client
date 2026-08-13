@@ -91,6 +91,10 @@ void ChatWidget::setSession(const QString &sessionId)
 {
     if (sessionId.isEmpty() || sessionId == m_sessionId)
         return;
+    // M6-4: 切换会话前若旧会话仍在流式生成，先请求取消，
+    // 避免旧会话的 text 事件继续刷到新会话消息区
+    if (m_streaming && m_bridge)
+        m_bridge->cancel(m_sessionId);
     m_sessionId = sessionId;
     m_streaming = false;
     m_stopBtn->setVisible(false);
@@ -117,6 +121,12 @@ void ChatWidget::onEngineEvent(const QJsonObject &obj)
 {
     const QString type = obj.value(QStringLiteral("type")).toString();
 
+    // M6-4 串会话防护：引擎所有会话事件都带 sessionId；切会话后
+    // 旧会话的 text/done/messages 等事件必须忽略，否则串到新会话消息区。
+    // （不带 sessionId 的事件视为老协议/测试兼容，放行）
+    if (type != QLatin1String(FlareEvent::Models) && !eventForSession(obj))
+        return;
+
     if (type == QLatin1String(FlareEvent::Messages)) {
         // M5-5: 历史消息加载完成 → 渲染（仅在非流式状态处理，避免覆盖当前对话）
         if (!m_streaming)
@@ -133,6 +143,11 @@ void ChatWidget::onEngineEvent(const QJsonObject &obj)
         // 回复流结束：仅关闭流状态，不追加空块
         m_stopBtn->setVisible(false);
         endStream();
+    } else if (type == QLatin1String(FlareEvent::Cancelled)) {
+        // M6-4: 停止生成已生效（引擎回 cancelled）→ 关闭流 + 收起提示
+        m_stopBtn->setVisible(false);
+        endStream();
+        appendMessage(QStringLiteral("⏹ Flare"), QStringLiteral("已停止生成"));
     } else if (type == QLatin1String(FlareEvent::Error)) {
         m_stopBtn->setVisible(false);
         endStream();
@@ -355,6 +370,18 @@ void ChatWidget::updateWelcomeBreath()
     m_output->setAlignment(Qt::AlignHCenter);
 }
 
+// M6-4 串会话防护：事件带 sessionId 时校验是否属于当前会话。
+// 引擎（flare server）所有会话事件（text/done/cancelled/tool_call/tool_result/
+// messages/confirm）都带 sessionId；不带 sessionId 的事件（老协议/测试注入）
+// 视为兼容放行 —— 这样测试构造的旧格式事件仍能正常驱动 UI。
+bool ChatWidget::eventForSession(const QJsonObject &obj) const
+{
+    const QJsonValue sid = obj.value(QStringLiteral("sessionId"));
+    if (sid.isUndefined() || sid.isNull())
+        return true;
+    return sid.toString() == m_sessionId;
+}
+
 // ============================================================
 // M5-5 历史消息加载与渲染
 // 切换会话时 get_messages → messages 事件 → 逐条渲染
@@ -369,6 +396,11 @@ void ChatWidget::renderHistory(const QJsonArray &messages)
 {
     m_output->clear();
     m_output->setPlaceholderText(QString());
+    if (messages.isEmpty()) {
+        // M6-4: 空会话（新会话/无历史）→ 展示跃动欢迎词（用户要求每个会话都展示）
+        showWelcomeBanner();
+        return;
+    }
     for (const QJsonValue &v : messages) {
         const QJsonObject m = v.toObject();
         const QString role = m.value(QStringLiteral("role")).toString();
@@ -381,6 +413,4 @@ void ChatWidget::renderHistory(const QJsonArray &messages)
             appendMessage(QStringLiteral("Flare"), content);
         }
     }
-    if (messages.isEmpty())
-        m_output->setPlaceholderText(QStringLiteral("该会话暂无消息"));
 }

@@ -134,14 +134,23 @@ void SettingsPanel::save()
             line = QStringLiteral("DEEPSEEK_API_KEY=%1").arg(key);
             foundKey = true;
         } else if (line.startsWith(QLatin1String("DEFAULT_MODEL"))) {
-            line = QStringLiteral("DEFAULT_MODEL=%1").arg(model);
-            foundModel = true;
+            // M6-4: model 留空 = 不写 DEFAULT_MODEL（避免空值破坏 CLI 配置）；
+            // 已有行则删除，让引擎走默认模型
+            if (model.isEmpty()) {
+                line.clear();
+                foundModel = true;
+            } else {
+                line = QStringLiteral("DEFAULT_MODEL=%1").arg(model);
+                foundModel = true;
+            }
         }
     }
     if (!foundKey)
         lines.append(QStringLiteral("DEEPSEEK_API_KEY=%1").arg(key));
-    if (!foundModel)
+    if (!foundModel && !model.isEmpty())
         lines.append(QStringLiteral("DEFAULT_MODEL=%1").arg(model));
+    // 清理被清空的行（model 留空时删除 DEFAULT_MODEL 行）
+    lines.removeAll(QString());
     if (exists && !lines.isEmpty() && lines.last().isEmpty())
         lines.removeLast(); // 去掉可能残留的尾部空行
 

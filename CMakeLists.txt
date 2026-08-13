@@ -44,6 +44,15 @@ target_include_directories(flare_client_core PUBLIC src engine-bridge)
 add_executable(flare-client src/main.cpp)
 target_link_libraries(flare-client PRIVATE flare_client_core)
 
+# M6-4: 便携安装版图标 —— 构建后把火焰 SVG 复制到可执行文件同目录
+# （mainwindow 图标候选含 <appDir>/flare-icon.svg，之前无任何步骤产出该文件，
+#   便携版/开发版从未真正加载到自定义图标；RPM 安装版走 /usr/share/icons 路径）
+add_custom_command(TARGET flare-client POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+          ${CMAKE_CURRENT_SOURCE_DIR}/packaging/flare-client.svg
+          $<TARGET_FILE_DIR:flare-client>/flare-icon.svg
+  COMMENT "复制 flare-icon.svg 到可执行文件目录（便携版窗口图标）")
+
 # Windows 子系统（无控制台窗口）
 if(WIN32)
   set_target_properties(flare-client PROPERTIES WIN32_EXECUTABLE TRUE)

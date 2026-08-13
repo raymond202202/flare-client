@@ -158,6 +158,8 @@ void MainWindow::openSettingsPanel()
     dlg->setWindowTitle(QStringLiteral("设置"));
     dlg->setModal(true);
     dlg->resize(440, 320);
+    // M6-4: exec() 模态结束后自动销毁，避免每次打开泄漏 QDialog
+    dlg->setAttribute(Qt::WA_DeleteOnClose);
     auto *panel = new SettingsPanel(dlg);
     auto *layout = new QVBoxLayout(dlg);
     layout->setContentsMargins(0, 0, 0, 0);

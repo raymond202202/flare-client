@@ -51,6 +51,9 @@ private:
     // M5-5 加载会话历史（get_messages → messages 事件 → 渲染）
     void loadHistory(const QString &sessionId);
     void renderHistory(const QJsonArray &messages);
+    // M6-4 串会话防护：事件带 sessionId 时校验是否属于当前会话
+    // （引擎所有会话事件均带 sessionId；不带的老协议/测试视为放行）
+    bool eventForSession(const QJsonObject &obj) const;
     // M3-5 confirm 事件 → 弹窗（允许/拒绝），按选择回传 confirm_result
     void showConfirmDialog(const QJsonObject &confirmEvent);
     // M3-5 重入安全：不在事件处理栈内弹模态框；缓存后延迟到下一事件循环 tick

@@ -35,6 +35,12 @@ private slots:
     void stopButtonShowsDuringStream();
     void stopButtonHidesAfterDone();
     void stopGenerationSendsCancel();
+    // M6-4 体验打磨新测试
+    void foreignSessionTextIgnored();
+    void foreignSessionDoneIgnored();
+    void cancelledClosesStream();
+    void setSessionCancelsActiveStream();
+    void emptyHistoryShowsWelcome();
 };
 
 // 构造一个 text 事件
@@ -242,6 +248,105 @@ void ChatWidgetTest::stopGenerationSendsCancel()
     QCOMPARE(req.value("sessionId").toString(), w.sessionId());
     QVERIFY2(!w.stopButton()->isVisible(), "停止后按钮应隐藏");
     QVERIFY2(w.outputText().contains(QStringLiteral("已请求停止")), qPrintable(w.outputText()));
+}
+
+// M6-4: 串会话防护 —— 引擎所有会话事件都带 sessionId；旧会话（非当前）
+// 的 text 事件不得渲染到新会话消息区
+void ChatWidgetTest::foreignSessionTextIgnored()
+{
+    EngineBridge bridge;
+    ChatWidget w(&bridge);
+    w.setSession(QStringLiteral("session-B"));
+
+    // 会话 A（旧）的流式事件：应被忽略
+    w.onEngineEvent(QJsonObject{{"type", "text"},
+                                {"content", "旧会话的回复"},
+                                {"sessionId", "session-A"}});
+    QVERIFY2(!w.outputText().contains(QStringLiteral("旧会话的回复")),
+             "旧会话的 text 不应渲染到新会话");
+
+    // 当前会话的事件：正常渲染
+    w.onEngineEvent(QJsonObject{{"type", "text"},
+                                {"content", "当前会话回复"},
+                                {"sessionId", "session-B"}});
+    QVERIFY2(w.outputText().contains(QStringLiteral("当前会话回复")),
+             qPrintable(w.outputText()));
+}
+
+// M6-4: 串会话防护 —— 旧会话的 done 事件不得结束新会话的流状态
+void ChatWidgetTest::foreignSessionDoneIgnored()
+{
+    EngineBridge bridge;
+    ChatWidget w(&bridge);
+    w.show();
+    w.setSession(QStringLiteral("session-B"));
+
+    // 当前会话开始流式
+    w.onEngineEvent(QJsonObject{{"type", "text"},
+                                {"content", "回复中"},
+                                {"sessionId", "session-B"}});
+    QVERIFY(w.stopButton()->isVisible());
+
+    // 旧会话 done 到达：不应隐藏停止按钮/结束当前流
+    w.onEngineEvent(QJsonObject{{"type", "done"}, {"sessionId", "session-A"}});
+    QVERIFY2(w.stopButton()->isVisible(), "旧会话 done 不应结束当前流");
+
+    // 当前会话 done：正常结束
+    w.onEngineEvent(QJsonObject{{"type", "done"}, {"sessionId", "session-B"}});
+    QVERIFY(!w.stopButton()->isVisible());
+}
+
+// M6-4: cancelled 事件（停止生成生效）→ 关闭流 + 收起提示
+void ChatWidgetTest::cancelledClosesStream()
+{
+    EngineBridge bridge;
+    ChatWidget w(&bridge);
+    w.show();
+
+    w.onEngineEvent(QJsonObject{{"type", "text"}, {"content", "回复中"}});
+    QVERIFY(w.stopButton()->isVisible());
+
+    w.onEngineEvent(QJsonObject{{"type", "cancelled"}});
+    QVERIFY2(!w.stopButton()->isVisible(), "cancelled 后停止按钮应隐藏");
+    QVERIFY2(w.outputText().contains(QStringLiteral("已停止生成")), qPrintable(w.outputText()));
+}
+
+// M6-4: 切换会话时若旧会话仍在流式生成，先发 cancel 协议（针对旧会话）
+void ChatWidgetTest::setSessionCancelsActiveStream()
+{
+    EngineBridge bridge;
+    ChatWidget w(&bridge);
+    QSignalSpy spy(&bridge, &EngineBridge::requestSent);
+
+    const QString oldSession = w.sessionId();
+    w.show(); // isVisible() 断言需要真实可见状态
+    w.onEngineEvent(QJsonObject{{"type", "text"}, {"content", "回复中"}});
+    QVERIFY(w.stopButton()->isVisible());
+
+    w.setSession(QStringLiteral("session-B"));
+    // 切换会话会发 2 个请求：先 cancel 旧会话流，再 getMessages 加载新会话历史
+    QVERIFY2(spy.count() >= 2, "应发送 cancel + getMessages");
+    const QJsonObject req = spy.at(0).at(0).toJsonObject();
+    QCOMPARE(req.value("type").toString(), QString("cancel"));
+    // cancel 必须针对仍在流式的旧会话，而不是新会话
+    QCOMPARE(req.value("sessionId").toString(), oldSession);
+    // 第二个请求是 getMessages（新会话）
+    const QJsonObject req2 = spy.at(1).at(0).toJsonObject();
+    QCOMPARE(req2.value("type").toString(), QString("get_messages"));
+    QCOMPARE(req2.value("sessionId").toString(), QString("session-B"));
+}
+
+// M6-4: 空会话（无历史）→ 展示跃动欢迎词（用户要求每个会话都展示）
+void ChatWidgetTest::emptyHistoryShowsWelcome()
+{
+    EngineBridge bridge;
+    ChatWidget w(&bridge);
+    w.setSession(QStringLiteral("session-B"));
+
+    w.onEngineEvent(QJsonObject{{"type", "messages"}, {"messages", QJsonArray()}});
+    QVERIFY2(w.outputText().contains(QStringLiteral("F L A R E")), qPrintable(w.outputText()));
+    QVERIFY2(w.outputText().contains(QStringLiteral("Let your inspiration flare")),
+             qPrintable(w.outputText()));
 }
 
 QTEST_MAIN(ChatWidgetTest)

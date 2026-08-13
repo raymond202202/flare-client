@@ -18,7 +18,6 @@ private slots:
     {
         m_origHome = qEnvironmentVariable("HOME");
     }
-
     void cleanupTestCase()
     {
         qputenv("HOME", m_origHome.toUtf8());
@@ -45,6 +44,33 @@ private slots:
         SettingsPanel p;
         QCOMPARE(p.deepseekKeyEdit()->text(), QStringLiteral("sk-test-123"));
         QCOMPARE(p.modelEdit()->text(), QStringLiteral("deepseek-chat"));
+    }
+
+    // M6-4: model 留空 → 不写 DEFAULT_MODEL 空值行（避免破坏 CLI 配置）
+    void saveWithEmptyModelRemovesDefaultModel()
+    {
+        QTemporaryDir dir;
+        qputenv("HOME", QByteArray(dir.path().toUtf8()));
+        QDir().mkpath(dir.path() + "/.flare");
+        {
+            QFile f(dir.path() + "/.flare/.env");
+            f.open(QIODevice::WriteOnly);
+            f.write("DEEPSEEK_API_KEY=old\nDEFAULT_MODEL=deepseek-chat\nVISION_MODEL=qwen2.5vl:3b\n");
+            f.close();
+        }
+        SettingsPanel p;
+        p.deepseekKeyEdit()->setText(QStringLiteral("sk-new"));
+        p.modelEdit()->setText(QString()); // 用户清空模型 → 走引擎默认
+        p.save();
+        QFile f(dir.path() + "/.flare/.env");
+        f.open(QIODevice::ReadOnly);
+        const QString content = QString::fromUtf8(f.readAll());
+        f.close();
+        QVERIFY2(content.contains(QStringLiteral("DEEPSEEK_API_KEY=sk-new")), qPrintable(content));
+        QVERIFY2(!content.contains(QStringLiteral("DEFAULT_MODEL=")),
+                 "model 留空时不得写入 DEFAULT_MODEL 空值行");
+        QVERIFY2(content.contains(QStringLiteral("VISION_MODEL=qwen2.5vl:3b")),
+                 "其他变量应保留");
     }
 
     void saveWritesAndChmod600()
