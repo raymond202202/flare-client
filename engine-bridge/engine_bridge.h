@@ -37,6 +37,7 @@ inline const char *Confirm     = "confirm";
 inline const char *ToolExecute = "tool_execute";
 inline const char *Tools       = "tools";
 inline const char *RecentSessions = "recent_sessions";
+inline const char *Messages     = "messages";
 } // namespace FlareEvent
 
 // 解析一行 stdout JSON → QJsonObject（非法 JSON 返回空对象）
@@ -88,6 +89,8 @@ public slots:
     void getMemories(const QString &sessionId = "default");
     // M3-5 确认门回传：decision ∈ allow_once/allow_session/always/deny/alternative
     void confirmResult(const QString &sessionId, const QString &id, const QString &decision);
+    // M5-5 读取会话历史消息（响应 messages 事件；recent=true 返回最近 limit 条）
+    void getMessages(const QString &sessionId, int limit = 50);
     // M3-6 查询模型信息（响应 models 事件；只读，不触发生成）
     void queryModels();
     // M5-3 查询可用工具/技能（响应 tools 事件；只读）

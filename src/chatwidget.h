@@ -48,6 +48,9 @@ private:
     void startWelcomeBreathing();
     void stopWelcomeBreathing();
     void updateWelcomeBreath();
+    // M5-5 加载会话历史（get_messages → messages 事件 → 渲染）
+    void loadHistory(const QString &sessionId);
+    void renderHistory(const QJsonArray &messages);
     // M3-5 confirm 事件 → 弹窗（允许/拒绝），按选择回传 confirm_result
     void showConfirmDialog(const QJsonObject &confirmEvent);
     // M3-5 重入安全：不在事件处理栈内弹模态框；缓存后延迟到下一事件循环 tick

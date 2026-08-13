@@ -95,8 +95,11 @@ void ChatWidget::setSession(const QString &sessionId)
     m_streaming = false;
     m_stopBtn->setVisible(false);
     m_output->clear();
-    m_output->setPlaceholderText(QStringLiteral("已切换到会话 ") + sessionId);
+    m_output->setPlaceholderText(QStringLiteral("加载会话历史…"));
     stopWelcomeBreathing();
+    // M5-5: 切换会话 → 加载历史消息
+    if (m_bridge)
+        m_bridge->getMessages(sessionId, 50);
 }
 
 // M4-5 易用性：停止当前生成（cancel 协议已存在，UI 暴露）
@@ -114,6 +117,12 @@ void ChatWidget::onEngineEvent(const QJsonObject &obj)
 {
     const QString type = obj.value(QStringLiteral("type")).toString();
 
+    if (type == QLatin1String(FlareEvent::Messages)) {
+        // M5-5: 历史消息加载完成 → 渲染（仅在非流式状态处理，避免覆盖当前对话）
+        if (!m_streaming)
+            renderHistory(obj.value(QStringLiteral("messages")).toArray());
+        return;
+    }
     if (type == QLatin1String(FlareEvent::Text)) {
         QString content = obj.value(QStringLiteral("content")).toString();
         if (content.isEmpty())
@@ -344,4 +353,34 @@ void ChatWidget::updateWelcomeBreath()
                              .arg(flareHtml, tagHtml);
     m_output->setHtml(html);
     m_output->setAlignment(Qt::AlignHCenter);
+}
+
+// ============================================================
+// M5-5 历史消息加载与渲染
+// 切换会话时 get_messages → messages 事件 → 逐条渲染
+// ============================================================
+void ChatWidget::loadHistory(const QString &sessionId)
+{
+    if (m_bridge)
+        m_bridge->getMessages(sessionId, 50);
+}
+
+void ChatWidget::renderHistory(const QJsonArray &messages)
+{
+    m_output->clear();
+    m_output->setPlaceholderText(QString());
+    for (const QJsonValue &v : messages) {
+        const QJsonObject m = v.toObject();
+        const QString role = m.value(QStringLiteral("role")).toString();
+        const QString content = m.value(QStringLiteral("content")).toString();
+        if (content.isEmpty())
+            continue;
+        if (role == QLatin1String("user")) {
+            appendMessage(QStringLiteral("你"), content);
+        } else {
+            appendMessage(QStringLiteral("Flare"), content);
+        }
+    }
+    if (messages.isEmpty())
+        m_output->setPlaceholderText(QStringLiteral("该会话暂无消息"));
 }

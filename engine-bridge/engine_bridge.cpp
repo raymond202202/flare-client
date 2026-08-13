@@ -128,6 +128,16 @@ void EngineBridge::recentSessions()
     sendRequest({{QStringLiteral("type"), QStringLiteral("recent_sessions")}});
 }
 
+void EngineBridge::getMessages(const QString &sessionId, int limit)
+{
+    sendRequest({
+        {QStringLiteral("type"), QStringLiteral("get_messages")},
+        {QStringLiteral("sessionId"), sessionId},
+        {QStringLiteral("recent"), true},
+        {QStringLiteral("limit"), limit},
+    });
+}
+
 void EngineBridge::createSession(const QString &sessionId, const QString &title)
 {
     sendRequest({
