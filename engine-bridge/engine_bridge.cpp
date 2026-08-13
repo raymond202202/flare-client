@@ -163,6 +163,11 @@ void EngineBridge::queryModels()
     sendRequest({{QStringLiteral("type"), QStringLiteral("models")}});
 }
 
+void EngineBridge::queryTools()
+{
+    sendRequest({{QStringLiteral("type"), QStringLiteral("tools")}});
+}
+
 void EngineBridge::onReadyReadStdout()
 {
     if (m_processingStdout)

@@ -30,6 +30,8 @@ add_library(flare_client_core STATIC
   src/sessionlistwidget.cpp
   src/memorypanel.h
   src/memorypanel.cpp
+  src/skillpanel.h
+  src/skillpanel.cpp
   engine-bridge/engine_bridge.h
   engine-bridge/engine_bridge.cpp
 )

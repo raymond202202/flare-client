@@ -15,6 +15,7 @@ SessionListWidget::SessionListWidget(EngineBridge *bridge, QWidget *parent)
     , m_newBtn(new QPushButton(QStringLiteral("＋ 新建"), this))
     , m_delBtn(new QPushButton(QStringLiteral("删除"), this))
     , m_memoryBtn(new QPushButton(QStringLiteral("🧠 记忆"), this))
+    , m_skillBtn(new QPushButton(QStringLiteral("🔧 技能"), this))
 {
     setFixedWidth(kSidebarWidth);
 
@@ -57,10 +58,18 @@ SessionListWidget::SessionListWidget(EngineBridge *bridge, QWidget *parent)
         "QPushButton:hover { background:#ffedd0; }"));
     layout->addWidget(m_memoryBtn);
 
+    // 技能入口（M5-3）—— 用户反馈：有记忆按钮但没 skill 按钮
+    m_skillBtn->setStyleSheet(QStringLiteral(
+        "QPushButton { background:#ffffff; color:#f97316; border:1px solid #fde6bf;"
+        " border-radius:6px; padding:6px 10px; font-size:13px; }"
+        "QPushButton:hover { background:#ffedd0; }"));
+    layout->addWidget(m_skillBtn);
+
     connect(m_bridge, &EngineBridge::eventReceived, this, &SessionListWidget::onEngineEvent);
     connect(m_newBtn, &QPushButton::clicked, this, &SessionListWidget::onCreateClicked);
     connect(m_delBtn, &QPushButton::clicked, this, &SessionListWidget::onDeleteClicked);
     connect(m_memoryBtn, &QPushButton::clicked, this, &SessionListWidget::memoryRequested);
+    connect(m_skillBtn, &QPushButton::clicked, this, &SessionListWidget::skillRequested);
     connect(m_list, &QListWidget::itemClicked, this, &SessionListWidget::onItemClicked);
 }
 

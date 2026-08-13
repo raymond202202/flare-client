@@ -2,6 +2,7 @@
 #include "chatwidget.h"
 #include "sessionlistwidget.h"
 #include "memorypanel.h"
+#include "skillpanel.h"
 
 #include <QStatusBar>
 #include <QSplitter>
@@ -64,6 +65,9 @@ MainWindow::MainWindow(QWidget *parent)
     // 侧边栏「记忆」→ 弹出记忆面板
     connect(m_sessions, &SessionListWidget::memoryRequested,
             this, &MainWindow::openMemoryPanel);
+    // M5-3 侧边栏「技能」→ 弹出技能面板
+    connect(m_sessions, &SessionListWidget::skillRequested,
+            this, &MainWindow::openSkillPanel);
     // M3-6: 引擎事件 → 解析 models 展示模型信息
     connect(m_engine.get(), &EngineBridge::eventReceived,
             this, &MainWindow::onEngineEvent);
@@ -117,6 +121,21 @@ void MainWindow::openMemoryPanel()
     dlg->setModal(false);
     dlg->resize(420, 480);
     auto *panel = new MemoryPanel(m_engine.get(), dlg);
+    auto *layout = new QVBoxLayout(dlg);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->addWidget(panel);
+    dlg->setAttribute(Qt::WA_DeleteOnClose);
+    dlg->show();
+    panel->refresh();
+}
+
+void MainWindow::openSkillPanel()
+{
+    auto *dlg = new QDialog(this);
+    dlg->setWindowTitle(QStringLiteral("技能与工具"));
+    dlg->setModal(false);
+    dlg->resize(420, 480);
+    auto *panel = new SkillPanel(m_engine.get(), dlg);
     auto *layout = new QVBoxLayout(dlg);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->addWidget(panel);

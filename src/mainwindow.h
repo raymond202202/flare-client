@@ -28,6 +28,8 @@ public:
 public slots:
     // 打开记忆查看弹窗（M3-2）
     void openMemoryPanel();
+    // M5-3 打开技能/工具面板（弹窗）
+    void openSkillPanel();
     // M3-6: 解析 models 事件，仅展示 model/provider（不泄露 key/baseURL）
     void onEngineEvent(const QJsonObject &obj);
 

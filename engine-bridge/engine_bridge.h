@@ -35,6 +35,7 @@ inline const char *Memories    = "memories";
 inline const char *Models      = "models";
 inline const char *Confirm     = "confirm";
 inline const char *ToolExecute = "tool_execute";
+inline const char *Tools       = "tools";
 } // namespace FlareEvent
 
 // 解析一行 stdout JSON → QJsonObject（非法 JSON 返回空对象）
@@ -86,6 +87,8 @@ public slots:
     void confirmResult(const QString &sessionId, const QString &id, const QString &decision);
     // M3-6 查询模型信息（响应 models 事件；只读，不触发生成）
     void queryModels();
+    // M5-3 查询可用工具/技能（响应 tools 事件；只读）
+    void queryTools();
 
 private slots:
     void onReadyReadStdout();

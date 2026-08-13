@@ -25,6 +25,7 @@ public:
     QPushButton *newButton() const { return m_newBtn; }
     QPushButton *deleteButton() const { return m_delBtn; }
     QPushButton *memoryButton() const { return m_memoryBtn; }
+    QPushButton *skillButton() const { return m_skillBtn; }
     QString currentSessionId() const;
     int count() const { return m_list->count(); }
 
@@ -37,6 +38,8 @@ signals:
     void sessionSelected(const QString &sessionId);
     // 用户点击「记忆」入口
     void memoryRequested();
+    // M5-3 用户点击「技能」入口
+    void skillRequested();
 
 private slots:
     void onCreateClicked();
@@ -51,6 +54,7 @@ private:
     QPushButton *m_newBtn;
     QPushButton *m_delBtn;
     QPushButton *m_memoryBtn;
+    QPushButton *m_skillBtn;
 };
 
 #endif // SESSIONLISTWIDGET_H
