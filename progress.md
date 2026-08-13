@@ -28,11 +28,11 @@
 > 用户意见原文：「我还没看产品…主色调改为之前做命令行版时我要求的红橙黄等火焰活力色系。每个会话都要在会话之初展示我们之前命令行版设计的跃动版欢迎词。左边面板我看到了记忆按钮，但没看到skill按钮，左边面板每个会话展示的太简单，让人看不出来哪个会话是什么，且点进去看不到历史消息。」
 > 视觉规范来源：`~/hermes-projects/flare/src/cli/flame-banner.ts`（FLAME_TOKENS：红 #ef4444 / 橙 #f97316 / 琥珀 #f59e0b / 黄 #fbbf24；flameColor() 红→橙→黄插值；欢迎词 "F L A R E" + "Let your inspiration flare 🔥"）
 
-- [ ] M5-1 火焰主题换肤：全 UI 紫色 → 火焰色系（主色橙 #f97316、强调红 #ef4444、高亮黄 #fbbf24），移植 flameColor() 渐变到 Qt（QColor 插值）
-- [ ] M5-2 跃动欢迎词：每个会话开始时展示命令行版同款欢迎词（F L A R E + Let your inspiration flare 🔥，火焰渐变 + 呼吸动画 QTimer 驱动）
-- [ ] M5-3 Skill 按钮：左侧面板新增 Skill 入口（发 `tools` 命令 → 展示可用工具/技能列表面板）
-- [ ] M5-4 会话列表增强：改用 `recent_sessions`（含 preview 首条消息预览 + updatedAt 时间）展示，让会话可识别
-- [ ] M5-5 历史消息加载：切换会话时发 `get_messages` 加载历史消息并渲染到消息区（当前切会话只清空）
+- [x] M5-1 火焰主题换肤：全 UI 紫色 → 火焰色系（主色橙 #f97316、强调红 #ef4444、高亮黄 #fbbf24），移植 flameColor() 渐变到 Qt（QColor 插值）
+- [x] M5-2 跃动欢迎词：每个会话开始时展示命令行版同款欢迎词（F L A R E + Let your inspiration flare 🔥，火焰渐变 + 呼吸动画 QTimer 驱动）
+- [x] M5-3 Skill 按钮：左侧面板新增 Skill 入口（发 `tools` 命令 → 展示可用工具/技能列表面板）
+- [x] M5-4 会话列表增强：改用 `recent_sessions`（含 preview 首条消息预览 + updatedAt 时间）展示，让会话可识别
+- [x] M5-5 历史消息加载：切换会话时发 `get_messages` 加载历史消息并渲染到消息区（当前切会话只清空）
 - [x] （2026-08-13 02:10 第 15 轮核验）M4 全部完成待用户验收；飞书文档已补同步 M4 条目（revision 35）
 
 ## 迭代记录
