@@ -9,6 +9,8 @@
 #include <QFont>
 #include <QMessageBox>
 #include <QTimer>
+#include <QDateTime>
+#include "flametheme.h"
 
 ChatWidget::ChatWidget(EngineBridge *bridge, QWidget *parent)
     : QWidget(parent)
@@ -24,14 +26,14 @@ ChatWidget::ChatWidget(EngineBridge *bridge, QWidget *parent)
     layout->setSpacing(8);
 
     auto *title = new QLabel(QStringLiteral("Flare 对话"), this);
-    title->setStyleSheet(QStringLiteral("font-size:16px; font-weight:600; color:#6d4aff;"));
+    title->setStyleSheet(QStringLiteral("font-size:16px; font-weight:600; color:#f97316;"));
     layout->addWidget(title);
 
     // 消息区：只读、可选中复制
     m_output->setReadOnly(true);
     m_output->setPlaceholderText(QStringLiteral("等待对话…"));
     m_output->setStyleSheet(QStringLiteral(
-        "QTextEdit { background:#fafafe; border:1px solid #e8e6f5; border-radius:8px;"
+        "QTextEdit { background:#fffbf0; border:1px solid #fde6bf; border-radius:8px;"
         " font-size:14px; padding:8px; }"));
     layout->addWidget(m_output, 1);
 
@@ -39,23 +41,23 @@ ChatWidget::ChatWidget(EngineBridge *bridge, QWidget *parent)
     auto *inputRow = new QHBoxLayout;
     m_input->setPlaceholderText(QStringLiteral("输入消息，Enter 发送"));
     m_input->setStyleSheet(QStringLiteral(
-        "QLineEdit { background:#ffffff; border:1px solid #e8e6f5; border-radius:8px;"
+        "QLineEdit { background:#ffffff; border:1px solid #fde6bf; border-radius:8px;"
         " padding:8px 10px; font-size:14px; }"
-        "QLineEdit:focus { border-color:#6d4aff; }"));
+        "QLineEdit:focus { border-color:#f97316; }"));
     inputRow->addWidget(m_input, 1);
     m_sendBtn->setStyleSheet(QStringLiteral(
-        "QPushButton { background:#6d4aff; color:white; border:none; border-radius:8px;"
+        "QPushButton { background:#f97316; color:white; border:none; border-radius:8px;"
         " padding:8px 18px; font-size:14px; }"
-        "QPushButton:hover { background:#5a3de0; }"
-        "QPushButton:pressed { background:#4b31c0; }"));
+        "QPushButton:hover { background:#e0630f; }"
+        "QPushButton:pressed { background:#c04f08; }"));
     inputRow->addWidget(m_sendBtn);
 
     // M4-5 易用性：停止生成按钮（默认隐藏，流式输出/等待回复时显示）
     m_stopBtn->setStyleSheet(QStringLiteral(
-        "QPushButton { background:#ffffff; color:#6d4aff; border:1px solid #d8ccff;"
+        "QPushButton { background:#ffffff; color:#ef4444; border:1px solid #fda4a4;"
         " border-radius:8px; padding:8px 14px; font-size:14px; }"
-        "QPushButton:hover { background:#f3efff; }"
-        "QPushButton:pressed { background:#e8e0ff; }"));
+        "QPushButton:hover { background:#fef2f2; }"
+        "QPushButton:pressed { background:#fde8e8; }"));
     m_stopBtn->setVisible(false);
     inputRow->addWidget(m_stopBtn);
     layout->addLayout(inputRow);
@@ -64,6 +66,12 @@ ChatWidget::ChatWidget(EngineBridge *bridge, QWidget *parent)
     connect(m_input, &QLineEdit::returnPressed, this, &ChatWidget::sendMessage);
     connect(m_stopBtn, &QPushButton::clicked, this, &ChatWidget::stopGeneration);
     connect(m_bridge, &EngineBridge::eventReceived, this, &ChatWidget::onEngineEvent);
+
+    // M5-2: 启动即展示跃动欢迎词（火焰渐变 + 呼吸动画）
+    m_breathTimer = new QTimer(this);
+    m_breathTimer->setInterval(80); // ~12fps，与命令行版一致
+    connect(m_breathTimer, &QTimer::timeout, this, &ChatWidget::updateWelcomeBreath);
+    showWelcomeBanner();
 }
 
 void ChatWidget::sendMessage()
@@ -71,6 +79,8 @@ void ChatWidget::sendMessage()
     const QString text = m_input->text().trimmed();
     if (text.isEmpty())
         return;
+    if (m_welcomeVisible)
+        stopWelcomeBreathing(); // M5-2: 发送首条消息后收起欢迎词
     endStream(); // 用户新消息前结束未完成流，避免 chunk 串块
     appendMessage(QStringLiteral("你"), text);
     m_input->clear();
@@ -86,6 +96,7 @@ void ChatWidget::setSession(const QString &sessionId)
     m_stopBtn->setVisible(false);
     m_output->clear();
     m_output->setPlaceholderText(QStringLiteral("已切换到会话 ") + sessionId);
+    stopWelcomeBreathing();
 }
 
 // M4-5 易用性：停止当前生成（cancel 协议已存在，UI 暴露）
@@ -164,7 +175,7 @@ void ChatWidget::appendStreamChunk(const QString &chunk)
         m_streaming = true;
         cursor.insertBlock();
         QTextCharFormat label;
-        label.setForeground(QColor(QStringLiteral("#6d4aff")));
+        label.setForeground(FlameTheme::orange());
         label.setFontWeight(QFont::Bold);
         cursor.insertText(QStringLiteral("Flare："), label);
     }
@@ -186,9 +197,9 @@ void ChatWidget::appendToolCard(const QString &icon, const QString &title, const
     cursor.insertBlock();
     const QString html = QStringLiteral(
         "<table width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\"><tr><td "
-        "style=\"background:#f3efff;border:1px solid #d8ccff;border-radius:8px;padding:6px 10px;\">"
-        "<b style=\"color:#6d4aff;\">%1 %2</b>"
-        "<br/><span style=\"color:#4a4a6a;font-family:monospace;\">%3</span>"
+        "style=\"background:#fff3d6;border:1px solid #fde6bf;border-radius:8px;padding:6px 10px;\">"
+        "<b style=\"color:#f97316;\">%1 %2</b>"
+        "<br/><span style=\"color:#8a6a3b;font-family:monospace;\">%3</span>"
         "</td></tr></table>")
                              .arg(icon, title.toHtmlEscaped(), body.toHtmlEscaped());
     cursor.insertHtml(html);
@@ -221,10 +232,10 @@ void ChatWidget::showConfirmDialog(const QJsonObject &confirmEvent)
     box.setText(text);
     box.setStyleSheet(QStringLiteral(
         "QMessageBox { background:#ffffff; }"
-        "QLabel { color:#2b2b40; font-size:14px; }"
-        "QPushButton { background:#6d4aff; color:white; border:none; border-radius:6px;"
+        "QLabel { color:#4a2e0d; font-size:14px; }"
+        "QPushButton { background:#f97316; color:white; border:none; border-radius:6px;"
         " padding:6px 16px; font-size:14px; }"
-        "QPushButton:hover { background:#5a3de0; }"));
+        "QPushButton:hover { background:#e0630f; }"));
     QPushButton *allowBtn = box.addButton(QStringLiteral("允许"), QMessageBox::AcceptRole);
     box.addButton(QStringLiteral("拒绝"), QMessageBox::RejectRole);
     box.setDefaultButton(allowBtn);
@@ -245,7 +256,92 @@ void ChatWidget::respondConfirm(const QString &id, const QString &decision)
 
 void ChatWidget::appendMessage(const QString &who, const QString &text)
 {
-    const QString html = QStringLiteral(R"(<p><b style="color:#6d4aff;">%1</b>：%2</p>)")
+    const QString html = QStringLiteral(R"(<p><b style="color:#f97316;">%1</b>：%2</p>)")
                              .arg(who.toHtmlEscaped(), text.toHtmlEscaped());
     m_output->append(html);
+}
+
+// ============================================================
+// M5-2 跃动欢迎词（移植命令行版 flame-banner）
+// 展示: "F L A R E"（火焰渐变）+ "Let your inspiration flare 🔥"
+// 呼吸动画: QTimer 80ms 刷新，相位随 sin 波动（与 CLI 同款）
+// ============================================================
+void ChatWidget::showWelcomeBanner()
+{
+    m_output->clear();
+    m_output->setPlaceholderText(QString());
+    m_welcomeVisible = true;
+    updateWelcomeBreath(); // 立即画第一帧
+    m_breathTimer->start();
+}
+
+void ChatWidget::startWelcomeBreathing()
+{
+    if (m_breathTimer && !m_breathTimer->isActive())
+        m_breathTimer->start();
+}
+
+void ChatWidget::stopWelcomeBreathing()
+{
+    if (m_breathTimer)
+        m_breathTimer->stop();
+    m_welcomeVisible = false;
+}
+
+void ChatWidget::updateWelcomeBreath()
+{
+    if (!m_welcomeVisible)
+        return;
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    // 呼吸偏移（与 CLI 一致：5s 周期，振幅 0.12）
+    const double t = now / 1000.0;
+    const double breath = std::sin(t * M_PI * 2 / 5) * 0.12;
+
+    // F L A R E：每字母独立渐变相位 + 呼吸偏移
+    const QString flareText = QStringLiteral("F L A R E");
+    const auto chars = flareText.toUcs4();
+    const int len = chars.size();
+    QString flareHtml;
+    for (int i = 0; i < len; ++i) {
+        const char32_t cp = static_cast<char32_t>(chars[i]);
+        if (cp == 0x20) {
+            flareHtml += QLatin1Char(' ');
+            continue;
+        }
+        double phase = (double(i) / len + breath);
+        phase -= std::floor(phase);
+        const QColor c = FlameTheme::flameColor(phase);
+        flareHtml += QStringLiteral("<span style=\"color:%1;font-size:22px;font-weight:700;\">%2</span>")
+                         .arg(c.name(),
+                              QString::fromUcs4(reinterpret_cast<const char32_t *>(&cp), 1));
+    }
+
+    // 标语：句尾落在红色端（reverse）
+    const QString tagline = QStringLiteral("Let your inspiration flare");
+    const auto tchars = tagline.toUcs4();
+    const int tlen = tchars.size();
+    QString tagHtml;
+    for (int i = 0; i < tlen; ++i) {
+        const char32_t cp = static_cast<char32_t>(tchars[i]);
+        if (cp == 0x20) {
+            tagHtml += QLatin1Char(' ');
+            continue;
+        }
+        double tt = len <= 1 ? 0 : double(i) / (tlen - 1);
+        tt = 1 - tt; // reverse：句尾 → 红色端
+        const QColor c = FlameTheme::flameColor(tt);
+        tagHtml += QStringLiteral("<span style=\"color:%1;\">%2</span>")
+                       .arg(c.name(),
+                            QString::fromUcs4(reinterpret_cast<const char32_t *>(&cp), 1));
+    }
+
+    const QString html = QStringLiteral(
+        "<div align=\"center\" style=\"padding-top:40px;\">"
+        "<div>%1</div>"
+        "<div style=\"padding-top:8px;font-size:15px;\">%2 🔥</div>"
+        "<div style=\"padding-top:12px;color:#b45309;font-size:12px;\">开始你的灵感之旅</div>"
+        "</div>")
+                             .arg(flareHtml, tagHtml);
+    m_output->setHtml(html);
+    m_output->setAlignment(Qt::AlignHCenter);
 }

@@ -10,7 +10,7 @@ class SessionListWidget;
 class QLabel;
 
 // Flare 客户端主窗口
-// UI 铁律：浅色白底紫配（主色 #6d4aff），干净、轻量
+// UI 铁律：火焰活力色系（橙 #f97316 主色 / 红 #ef4444 / 黄 #fbbf24），干净、轻量
 class MainWindow : public QMainWindow
 {
     Q_OBJECT

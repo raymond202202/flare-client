@@ -37,13 +37,13 @@ MainWindow::MainWindow(QWidget *parent)
         }
     }
 
-    // ---- 浅色白底紫配主题（用户 UI 铁律）----
+    // ---- 火焰活力色系主题（用户铁律：红橙黄火焰色）----
     QPalette pal = palette();
     pal.setColor(QPalette::Window, QColor(0xff, 0xff, 0xff));
-    pal.setColor(QPalette::WindowText, QColor(0x33, 0x33, 0x33));
-    pal.setColor(QPalette::Base, QColor(0xfa, 0xfa, 0xfe));
-    pal.setColor(QPalette::AlternateBase, QColor(0xf4, 0xf2, 0xff));
-    pal.setColor(QPalette::Highlight, QColor(0x6d, 0x4a, 0xff));
+    pal.setColor(QPalette::WindowText, QColor(0x4a, 0x2e, 0x0d));
+    pal.setColor(QPalette::Base, QColor(0xff, 0xfb, 0xf0));
+    pal.setColor(QPalette::AlternateBase, QColor(0xff, 0xf3, 0xd6));
+    pal.setColor(QPalette::Highlight, QColor(0xf9, 0x73, 0x16));
     pal.setColor(QPalette::HighlightedText, Qt::white);
     setPalette(pal);
 
@@ -70,7 +70,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     // M3-6: 状态栏右侧模型信息标签（只显示 model/provider）
     m_modelLabel = new QLabel(QStringLiteral("🤖 模型加载中…"), this);
-    m_modelLabel->setStyleSheet(QStringLiteral("color:#6d4aff; padding:0 8px;"));
+    m_modelLabel->setStyleSheet(QStringLiteral("color:#f97316; padding:0 8px;"));
     statusBar()->addPermanentWidget(m_modelLabel);
 
     // 启动 flare server（后台，不阻塞 UI）

@@ -43,6 +43,11 @@ private:
     void endStream();
     // M3-4 工具调用/结果卡片式展示（浅色紫底卡片）
     void appendToolCard(const QString &icon, const QString &title, const QString &body);
+    // M5-2 跃动欢迎词：会话开始展示火焰渐变 F L A R E + 呼吸动画
+    void showWelcomeBanner();
+    void startWelcomeBreathing();
+    void stopWelcomeBreathing();
+    void updateWelcomeBreath();
     // M3-5 confirm 事件 → 弹窗（允许/拒绝），按选择回传 confirm_result
     void showConfirmDialog(const QJsonObject &confirmEvent);
     // M3-5 重入安全：不在事件处理栈内弹模态框；缓存后延迟到下一事件循环 tick
@@ -56,6 +61,8 @@ private:
     QPushButton *m_stopBtn = nullptr;
     QString m_sessionId;
     bool m_streaming = false; // 是否处于 AI 回复流中（chunk 追加目标块）
+    QTimer *m_breathTimer = nullptr; // M5-2 欢迎词呼吸动画
+    bool m_welcomeVisible = false;   // 欢迎词是否显示中
 };
 
 #endif // CHATWIDGET_H

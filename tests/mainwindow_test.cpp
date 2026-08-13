@@ -48,9 +48,9 @@ void MainWindowTest::themeIsLightPurple()
     // 窗口背景 = 白色
     QColor win = w.palette().color(QPalette::Window);
     QVERIFY2(win.lightness() > 240, "Window 背景应为白色");
-    // 高亮色 = 紫色系 #6d4aff（主色）
+    // 高亮色 = 火焰橙 #f97316（M5-1 主色，红>蓝）
     QColor hl = w.palette().color(QPalette::Highlight);
-    QVERIFY2(hl.blue() > hl.red(), "Highlight 应为紫色系（蓝>红）");
+    QVERIFY2(hl.red() > hl.blue(), "Highlight 应为火焰橙色（红>蓝）");
     QVERIFY2(hl.value() > 100, "Highlight 饱和度足够");
 }
 

@@ -23,38 +23,38 @@ SessionListWidget::SessionListWidget(EngineBridge *bridge, QWidget *parent)
     layout->setSpacing(8);
 
     auto *title = new QLabel(QStringLiteral("会话"), this);
-    title->setStyleSheet(QStringLiteral("font-size:15px; font-weight:600; color:#6d4aff;"));
+    title->setStyleSheet(QStringLiteral("font-size:15px; font-weight:600; color:#f97316;"));
     layout->addWidget(title);
 
     // 会话列表
     m_list->setStyleSheet(QStringLiteral(
-        "QListWidget { background:#fafafe; border:1px solid #e8e6f5; border-radius:8px;"
+        "QListWidget { background:#fffbf0; border:1px solid #fde6bf; border-radius:8px;"
         " font-size:13px; padding:4px; outline:none; }"
         "QListWidget::item { padding:8px 6px; border-radius:6px; margin:1px; }"
-        "QListWidget::item:hover { background:#f0edff; }"
-        "QListWidget::item:selected { background:#6d4aff; color:white; }"));
+        "QListWidget::item:hover { background:#ffedd0; }"
+        "QListWidget::item:selected { background:#f97316; color:white; }"));
     layout->addWidget(m_list, 1);
 
     // 按钮行
     auto *btnRow = new QHBoxLayout;
     btnRow->setSpacing(6);
     m_newBtn->setStyleSheet(QStringLiteral(
-        "QPushButton { background:#6d4aff; color:white; border:none; border-radius:6px;"
+        "QPushButton { background:#f97316; color:white; border:none; border-radius:6px;"
         " padding:6px 10px; font-size:13px; }"
-        "QPushButton:hover { background:#5a3de0; }"));
+        "QPushButton:hover { background:#e0630f; }"));
     m_delBtn->setStyleSheet(QStringLiteral(
-        "QPushButton { background:#ffffff; color:#6d4aff; border:1px solid #d9d2f7;"
+        "QPushButton { background:#ffffff; color:#f97316; border:1px solid #fde6bf;"
         " border-radius:6px; padding:6px 10px; font-size:13px; }"
-        "QPushButton:hover { background:#f4f2ff; }"));
+        "QPushButton:hover { background:#ffedd0; }"));
     btnRow->addWidget(m_newBtn, 1);
     btnRow->addWidget(m_delBtn, 1);
     layout->addLayout(btnRow);
 
     // 记忆入口（M3-2）
     m_memoryBtn->setStyleSheet(QStringLiteral(
-        "QPushButton { background:#ffffff; color:#6d4aff; border:1px solid #d9d2f7;"
+        "QPushButton { background:#ffffff; color:#f97316; border:1px solid #fde6bf;"
         " border-radius:6px; padding:6px 10px; font-size:13px; }"
-        "QPushButton:hover { background:#f4f2ff; }"));
+        "QPushButton:hover { background:#ffedd0; }"));
     layout->addWidget(m_memoryBtn);
 
     connect(m_bridge, &EngineBridge::eventReceived, this, &SessionListWidget::onEngineEvent);
