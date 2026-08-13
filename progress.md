@@ -35,6 +35,13 @@
 - [x] M5-5 历史消息加载：切换会话时发 `get_messages` 加载历史消息并渲染到消息区（当前切会话只清空）
 - [x] （2026-08-13 02:10 第 15 轮核验）M4 全部完成待用户验收；飞书文档已补同步 M4 条目（revision 35）
 
+## 【✅ 已完成】M6 用户新增需求（2026-08-13）
+
+- [x] M6-1 图标改火焰色：packaging/flare-client.svg 紫色火焰 → 红橙黄渐变火焰；修复安装版从未加载自定义图标 bug（appDir 相对路径）；main.cpp 新增 --screenshot 自截图参数（物理屏黑屏时验证 UI）
+- [x] M6-2 设置入口：⚙️ 设置按钮 → 弹窗填写 API key（DEEPSEEK_API_KEY + DEFAULT_MODEL），读写 ~/.flare/.env（chmod 600、保留其他变量、Password 掩码）；新增 settingspanel 测试 → 7/7 全绿
+- [x] M6-3 CLI/GUI 配置共享验证：~/.flare/.env（key）+ flare.db（记忆/会话）天然共享（DB 实测 cli-share-test 会话可见）；CLI flare v0.6.110 与 GUI 同引擎同库
+- [ ] M6-4 体验打磨核验（自动迭代轮负责）
+
 ## 迭代记录
 
 | 轮次 | 时间 | 完成 | 构建 | 备注 |
