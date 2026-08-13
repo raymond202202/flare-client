@@ -4,6 +4,7 @@
 #include <QWidget>
 #include <QListWidget>
 #include <QPushButton>
+#include <QLineEdit>
 #include <QJsonObject>
 #include <QJsonArray>
 #include "engine_bridge.h"
@@ -12,6 +13,7 @@
 // 会话列表侧边栏（M3-1）
 // list_sessions 加载会话 + 新建（create_session）/切换/删除（delete_session）
 // 事件：sessions → 刷新列表；ok（create/delete 回执）→ 重新拉取
+// M7-2: 顶部搜索框（search_sessions）+ 📦 归档视图（archived_sessions）
 // ============================================================
 class SessionListWidget : public QWidget
 {
@@ -27,6 +29,8 @@ public:
     QPushButton *memoryButton() const { return m_memoryBtn; }
     QPushButton *skillButton() const { return m_skillBtn; }
     QPushButton *settingsButton() const { return m_settingsBtn; }
+    QLineEdit *searchBox() const { return m_searchBox; }
+    QPushButton *archiveButton() const { return m_archiveBtn; }
     QString currentSessionId() const;
     int count() const { return m_list->count(); }
 
@@ -48,6 +52,8 @@ private slots:
     void onCreateClicked();
     void onDeleteClicked();
     void onItemClicked(QListWidgetItem *item);
+    void onSearchChanged(const QString &text);
+    void onArchiveClicked();
 
 private:
     void applySessions(const QJsonArray &sessions);
@@ -59,6 +65,8 @@ private:
     QPushButton *m_memoryBtn;
     QPushButton *m_skillBtn;
     QPushButton *m_settingsBtn;
+    QLineEdit *m_searchBox;
+    QPushButton *m_archiveBtn;
 };
 
 #endif // SESSIONLISTWIDGET_H

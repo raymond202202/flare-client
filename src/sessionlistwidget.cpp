@@ -28,6 +28,8 @@ SessionListWidget::SessionListWidget(EngineBridge *bridge, QWidget *parent)
     , m_memoryBtn(new QPushButton(QStringLiteral("🧠 记忆"), this))
     , m_skillBtn(new QPushButton(QStringLiteral("🔧 技能"), this))
     , m_settingsBtn(new QPushButton(QStringLiteral("⚙️ 设置"), this))
+    , m_searchBox(new QLineEdit(this))
+    , m_archiveBtn(new QPushButton(QStringLiteral("📦 归档"), this))
 {
     setFixedWidth(kSidebarWidth);
 
@@ -38,6 +40,15 @@ SessionListWidget::SessionListWidget(EngineBridge *bridge, QWidget *parent)
     auto *title = new QLabel(QStringLiteral("会话"), this);
     title->setStyleSheet(QStringLiteral("font-size:15px; font-weight:600; color:#f97316;"));
     layout->addWidget(title);
+
+    // M7-2: 搜索框 —— 输入关键词 → search_sessions 实时过滤
+    m_searchBox->setPlaceholderText(QStringLiteral("🔍 搜索会话…"));
+    m_searchBox->setClearButtonEnabled(true);
+    m_searchBox->setStyleSheet(QStringLiteral(
+        "QLineEdit { background:#ffffff; border:1px solid #fde6bf; border-radius:6px;"
+        " padding:6px 8px; font-size:13px; color:#4b5563; }"
+        "QLineEdit:focus { border-color:#f97316; }"));
+    layout->addWidget(m_searchBox);
 
     // 会话列表
     m_list->setStyleSheet(QStringLiteral(
@@ -62,6 +73,13 @@ SessionListWidget::SessionListWidget(EngineBridge *bridge, QWidget *parent)
     btnRow->addWidget(m_newBtn, 1);
     btnRow->addWidget(m_delBtn, 1);
     layout->addLayout(btnRow);
+
+    // M7-2: 归档入口 —— archived_sessions 列表
+    m_archiveBtn->setStyleSheet(QStringLiteral(
+        "QPushButton { background:#ffffff; color:#f59e0b; border:1px solid #fde6bf;"
+        " border-radius:6px; padding:6px 10px; font-size:13px; }"
+        "QPushButton:hover { background:#ffedd0; }"));
+    layout->addWidget(m_archiveBtn);
 
     // 记忆入口（M3-2）
     m_memoryBtn->setStyleSheet(QStringLiteral(
@@ -91,6 +109,9 @@ SessionListWidget::SessionListWidget(EngineBridge *bridge, QWidget *parent)
     connect(m_skillBtn, &QPushButton::clicked, this, &SessionListWidget::skillRequested);
     connect(m_settingsBtn, &QPushButton::clicked, this, &SessionListWidget::settingsRequested);
     connect(m_list, &QListWidget::itemClicked, this, &SessionListWidget::onItemClicked);
+    // M7-2
+    connect(m_searchBox, &QLineEdit::textChanged, this, &SessionListWidget::onSearchChanged);
+    connect(m_archiveBtn, &QPushButton::clicked, this, &SessionListWidget::onArchiveClicked);
 }
 
 QString SessionListWidget::currentSessionId() const
@@ -114,10 +135,39 @@ void SessionListWidget::onEngineEvent(const QJsonObject &obj)
         applySessions(obj.value(QStringLiteral("sessions")).toArray());
     } else if (type == QLatin1String(FlareEvent::RecentSessions)) {
         applySessions(obj.value(QStringLiteral("sessions")).toArray());
+    } else if (type == QLatin1String("search_sessions")) {
+        // M7-2: 搜索命中 —— 仅当搜索框仍有关键词时应用（防旧响应覆盖新列表）
+        if (!m_searchBox->text().trimmed().isEmpty())
+            applySessions(obj.value(QStringLiteral("sessions")).toArray());
+    } else if (type == QLatin1String("archived_sessions")) {
+        // M7-2: 归档列表
+        applySessions(obj.value(QStringLiteral("sessions")).toArray());
     } else if (type == QLatin1String(FlareEvent::Ok)) {
         // create/delete 回执 → 重新拉取（标题可能被服务端规整）
         refresh();
     }
+}
+
+void SessionListWidget::onSearchChanged(const QString &text)
+{
+    if (!m_bridge)
+        return;
+    const QString q = text.trimmed();
+    if (q.isEmpty()) {
+        // 清空搜索 → 回到最近会话列表
+        refresh();
+    } else {
+        m_bridge->searchSessions(q, 30);
+    }
+}
+
+void SessionListWidget::onArchiveClicked()
+{
+    if (!m_bridge)
+        return;
+    // 切换归档视图：清空搜索框避免干扰（archived_sessions 是独立列表）
+    m_searchBox->clear();
+    m_bridge->archivedSessions();
 }
 
 void SessionListWidget::applySessions(const QJsonArray &sessions)

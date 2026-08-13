@@ -27,6 +27,10 @@ private slots:
     void sessionsEventPopulatesList();
     void clickEmitsSessionSelected();
     void createThenDeleteRoundTrip();
+    // M7-2
+    void searchBoxExistsAndFilters();
+    void searchEventPopulatesList();
+    void archivedEventPopulatesList();
 };
 
 static bool flareAvailable()
@@ -139,6 +143,66 @@ void SessionListWidgetTest::createThenDeleteRoundTrip()
     QVERIFY2(delSpy.wait(5000), "应收到 delete_session 的 ok 回执");
 
     bridge.stop();
+}
+
+// M7-2: 搜索框存在 + 输入关键词时触发 search_sessions 请求
+void SessionListWidgetTest::searchBoxExistsAndFilters()
+{
+    EngineBridge bridge;
+    SessionListWidget w(&bridge);
+    QVERIFY(w.searchBox() != nullptr);
+    QVERIFY(w.archiveButton() != nullptr);
+
+    QSignalSpy spy(&bridge, &EngineBridge::requestSent);
+    w.searchBox()->setText(QStringLiteral("灵感"));
+    QCOMPARE(spy.count(), 1);
+    const QJsonObject req = spy.at(0).at(0).toJsonObject();
+    QCOMPARE(req.value(QStringLiteral("type")).toString(), QStringLiteral("search_sessions"));
+    QCOMPARE(req.value(QStringLiteral("query")).toString(), QStringLiteral("灵感"));
+
+    // 清空 → 回到 recent_sessions
+    spy.clear();
+    w.searchBox()->clear();
+    QCOMPARE(spy.count(), 1);
+    QCOMPARE(spy.at(0).at(0).toJsonObject().value(QStringLiteral("type")).toString(),
+             QStringLiteral("recent_sessions"));
+}
+
+// M7-2: search_sessions 事件 → 列表填充
+void SessionListWidgetTest::searchEventPopulatesList()
+{
+    EngineBridge bridge;
+    SessionListWidget w(&bridge);
+    w.searchBox()->setText(QStringLiteral("灵感"));
+
+    QJsonArray arr;
+    arr.append(QJsonObject{{"id", "hit-1"}, {"title", "灵感记录"}});
+    w.onEngineEvent(QJsonObject{{"type", "search_sessions"}, {"sessions", arr}});
+    QCOMPARE(w.count(), 1);
+    QCOMPARE(w.list()->item(0)->text(), QString("灵感记录"));
+    QCOMPARE(w.list()->item(0)->data(Qt::UserRole).toString(), QString("hit-1"));
+
+    // 搜索框被清空（关键词失效）时，旧 search 响应不覆盖列表
+    QJsonArray arr2;
+    arr2.append(QJsonObject{{"id", "stale"}, {"title", "过期"}});
+    w.searchBox()->clear();
+    w.onEngineEvent(QJsonObject{{"type", "search_sessions"}, {"sessions", arr2}});
+    QCOMPARE(w.count(), 1); // 仍是 hit-1，未被 stale 覆盖
+    QCOMPARE(w.list()->item(0)->data(Qt::UserRole).toString(), QString("hit-1"));
+}
+
+// M7-2: archived_sessions 事件 → 列表填充
+void SessionListWidgetTest::archivedEventPopulatesList()
+{
+    EngineBridge bridge;
+    SessionListWidget w(&bridge);
+
+    QJsonArray arr;
+    arr.append(QJsonObject{{"id", "arch-1"}, {"title", "归档会话A"}, {"updatedAt", "2026-08-01T10:00:00"}});
+    w.onEngineEvent(QJsonObject{{"type", "archived_sessions"}, {"sessions", arr}});
+    QCOMPARE(w.count(), 1);
+    QCOMPARE(w.list()->item(0)->text().startsWith(QString("归档会话A")), true);
+    QCOMPARE(w.list()->item(0)->data(Qt::UserRole).toString(), QString("arch-1"));
 }
 
 QTEST_MAIN(SessionListWidgetTest)

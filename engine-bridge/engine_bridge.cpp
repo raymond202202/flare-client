@@ -128,6 +128,21 @@ void EngineBridge::recentSessions()
     sendRequest({{QStringLiteral("type"), QStringLiteral("recent_sessions")}});
 }
 
+void EngineBridge::searchSessions(const QString &query, int limit)
+{
+    QJsonObject req{{QStringLiteral("type"), QStringLiteral("search_sessions")}};
+    if (!query.trimmed().isEmpty())
+        req.insert(QStringLiteral("query"), query.trimmed());
+    req.insert(QStringLiteral("limit"), limit);
+    sendRequest(req);
+}
+
+void EngineBridge::archivedSessions()
+{
+    // 协议命令是 list_archived_sessions（v0.6.31），响应事件 type=archived_sessions
+    sendRequest({{QStringLiteral("type"), QStringLiteral("list_archived_sessions")}});
+}
+
 void EngineBridge::getMessages(const QString &sessionId, int limit)
 {
     sendRequest({

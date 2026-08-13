@@ -84,6 +84,10 @@ public slots:
     void listSessions();
     // M5-4 拉取最近会话（含 preview 首条消息预览 + updatedAt 时间；响应 recent_sessions）
     void recentSessions();
+    // M7-2 按关键词搜索会话（响应 search_sessions；只读，不触发生成）
+    void searchSessions(const QString &query, int limit = 20);
+    // M7-2 拉取归档会话列表（响应 archived_sessions；只读）
+    void archivedSessions();
     void createSession(const QString &sessionId, const QString &title);
     void deleteSession(const QString &sessionId);
     void getMemories(const QString &sessionId = "default");
