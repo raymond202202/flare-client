@@ -13,6 +13,7 @@
 #include <QJsonObject>
 #include <QIcon>
 #include <QFile>
+#include <QCoreApplication>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -26,9 +27,12 @@ MainWindow::MainWindow(QWidget *parent)
     setMenuBar(nullptr);
 
     // 窗口图标（RPM 安装路径 /usr/share/icons/hicolor/scalable/apps/，
+    // 便携安装版 <appDir>/flare-icon.svg（M6-1：任意用户路径可用），
     // 开发时回退 packaging/flare-client.svg）
+    const QString appDir = QCoreApplication::applicationDirPath();
     const QStringList iconCandidates = {
         QStringLiteral("/usr/share/icons/hicolor/scalable/apps/flare-client.svg"),
+        appDir + QStringLiteral("/flare-icon.svg"),
         QStringLiteral("packaging/flare-client.svg"),
     };
     for (const QString &path : iconCandidates) {
