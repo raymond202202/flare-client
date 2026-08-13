@@ -8,6 +8,17 @@
 // 侧边栏固定宽度（简洁轻量）
 static constexpr int kSidebarWidth = 220;
 
+// M5-4: ISO 时间 → 简短显示（今天显示 HH:MM，否则 MM-DD）
+static QString shortTime(const QString &iso)
+{
+    const QDateTime dt = QDateTime::fromString(iso, Qt::ISODateWithMs);
+    if (!dt.isValid())
+        return iso.left(10);
+    if (dt.date() == QDate::currentDate())
+        return dt.toString(QStringLiteral("HH:mm"));
+    return dt.toString(QStringLiteral("MM-dd"));
+}
+
 SessionListWidget::SessionListWidget(EngineBridge *bridge, QWidget *parent)
     : QWidget(parent)
     , m_bridge(bridge)
@@ -84,13 +95,15 @@ QString SessionListWidget::currentSessionId() const
 void SessionListWidget::refresh()
 {
     if (m_bridge)
-        m_bridge->listSessions();
+        m_bridge->recentSessions(); // M5-4: 含 preview + updatedAt
 }
 
 void SessionListWidget::onEngineEvent(const QJsonObject &obj)
 {
     const QString type = obj.value(QStringLiteral("type")).toString();
     if (type == QLatin1String(FlareEvent::Sessions)) {
+        applySessions(obj.value(QStringLiteral("sessions")).toArray());
+    } else if (type == QLatin1String(FlareEvent::RecentSessions)) {
         applySessions(obj.value(QStringLiteral("sessions")).toArray());
     } else if (type == QLatin1String(FlareEvent::Ok)) {
         // create/delete 回执 → 重新拉取（标题可能被服务端规整）
@@ -108,7 +121,30 @@ void SessionListWidget::applySessions(const QJsonArray &sessions)
         const QString title = s.value(QStringLiteral("title")).toString();
         if (id.isEmpty())
             continue;
-        auto *item = new QListWidgetItem(title.isEmpty() ? QStringLiteral("新会话") : title);
+
+        // M5-4: 双行展示 —— 标题 + 预览/更新时间，让会话可辨识
+        const QString preview = s.value(QStringLiteral("preview")).toString().trimmed();
+        const QString updated = s.value(QStringLiteral("updatedAt")).toString();
+        QString secondLine;
+        if (!preview.isEmpty()) {
+            secondLine = preview;
+            if (secondLine.size() > 24)
+                secondLine = secondLine.left(24) + QStringLiteral("…");
+            if (!updated.isEmpty())
+                secondLine += QStringLiteral("  ·  ") + shortTime(updated);
+        } else if (!updated.isEmpty()) {
+            secondLine = shortTime(updated);
+        }
+
+        const QString mainText = title.isEmpty() ? QStringLiteral("新会话") : title;
+        auto *item = new QListWidgetItem;
+        if (secondLine.isEmpty()) {
+            item->setText(mainText);
+        } else {
+            item->setText(QStringLiteral("%1\n%2").arg(mainText, secondLine));
+            item->setSizeHint(QSize(180, 46));
+            item->setToolTip(preview);
+        }
         item->setData(Qt::UserRole, id);
         m_list->addItem(item);
     }

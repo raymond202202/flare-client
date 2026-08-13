@@ -36,6 +36,7 @@ inline const char *Models      = "models";
 inline const char *Confirm     = "confirm";
 inline const char *ToolExecute = "tool_execute";
 inline const char *Tools       = "tools";
+inline const char *RecentSessions = "recent_sessions";
 } // namespace FlareEvent
 
 // 解析一行 stdout JSON → QJsonObject（非法 JSON 返回空对象）
@@ -80,6 +81,8 @@ public slots:
     void chat(const QString &sessionId, const QString &input);
     void cancel(const QString &sessionId = "default");
     void listSessions();
+    // M5-4 拉取最近会话（含 preview 首条消息预览 + updatedAt 时间；响应 recent_sessions）
+    void recentSessions();
     void createSession(const QString &sessionId, const QString &title);
     void deleteSession(const QString &sessionId);
     void getMemories(const QString &sessionId = "default");

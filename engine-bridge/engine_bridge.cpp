@@ -123,6 +123,11 @@ void EngineBridge::listSessions()
     sendRequest({{QStringLiteral("type"), QStringLiteral("list_sessions")}});
 }
 
+void EngineBridge::recentSessions()
+{
+    sendRequest({{QStringLiteral("type"), QStringLiteral("recent_sessions")}});
+}
+
 void EngineBridge::createSession(const QString &sessionId, const QString &title)
 {
     sendRequest({
