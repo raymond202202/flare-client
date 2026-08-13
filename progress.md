@@ -35,12 +35,19 @@
 - [x] M5-5 历史消息加载：切换会话时发 `get_messages` 加载历史消息并渲染到消息区（当前切会话只清空）
 - [x] （2026-08-13 02:10 第 15 轮核验）M4 全部完成待用户验收；飞书文档已补同步 M4 条目（revision 35）
 
-## 【✅ 已完成】M6 用户新增需求（2026-08-13）
+## 【✅ 已完成】M6 用户新增需求（2026-08-13 交付）
 
 - [x] M6-1 图标改火焰色：packaging/flare-client.svg 紫色火焰 → 红橙黄渐变火焰；修复安装版从未加载自定义图标 bug（appDir 相对路径）；main.cpp 新增 --screenshot 自截图参数（物理屏黑屏时验证 UI）
 - [x] M6-2 设置入口：⚙️ 设置按钮 → 弹窗填写 API key（DEEPSEEK_API_KEY + DEFAULT_MODEL），读写 ~/.flare/.env（chmod 600、保留其他变量、Password 掩码）；新增 settingspanel 测试 → 7/7 全绿
 - [x] M6-3 CLI/GUI 配置共享验证：~/.flare/.env（key）+ flare.db（记忆/会话）天然共享（DB 实测 cli-share-test 会话可见）；CLI flare v0.6.110 与 GUI 同引擎同库
-- [ ] M6-4 体验打磨核验（自动迭代轮负责）
+- [x] M6-4 体验打磨核验（自动迭代轮完成，commit f09e051）：修复 6 处新 UI 问题——
+  ① 串会话防护：引擎所有会话事件带 sessionId，ChatWidget 校验归属，旧会话流式回复不再串入新会话（含测试）
+  ② 切换会话时旧会话流式先发 cancel 再 getMessages（含测试）
+  ③ cancelled 事件处理：停止生成生效关闭流 + 收起提示（含测试）
+  ④ 空会话展示跃动欢迎词替代「暂无消息」（含测试）
+  ⑤ openSettingsPanel 补 WA_DeleteOnClose 修复对话框泄漏
+  ⑥ SettingsPanel model 留空不再写空值行；CMake POST_BUILD 复制 flare-icon.svg 到可执行目录（修复便携版图标未生效遗留）
+  质量：构建 0 错误 + 7/7 ctest 全绿（chatwidget 20 子测试）+ e2e 真实对话 PASS + 截图像素验证（火焰主题配色正确）
 
 ## 迭代记录
 
@@ -65,6 +72,7 @@
 | 16 | 2026-08-13 夜间 | M4 完成核验（无代码变更） | ✅ 6/6 测试 + 构建 0 错误 | 读 macmini 日志：最新条目仍为 v0.4.0-M3-7 自动跟进确认（编译 0 错 + 6/6 绿 + dmg 37M），无新问题/建议/修复请求（第六章仅历史 fedora 回应，无新条目）；progress.md M4-1~M4-5 全勾选无未完成阶段 → 按铁律不再自循环；复验构建 0 错误 + ctest 6/6 全绿（1.81s）；git 工作区干净（HEAD=2a7b630）；确认飞书文档末尾已含 v0.4.0-M4 条目（revision 35 生效，两条 M4 记录，macmini 全文扫描可检测）→ 无需重复同步；RPM 产物 packaging/dist/flare-client_0.4.0.rpm（50K）在；M4 全部完成，等待用户验收 |
 | 17 | 2026-08-13 夜间 | M4 完成核验（无代码变更） | ✅ 6/6 测试 + 构建 0 错误 | 读 macmini 日志：最新条目仍为 v0.4.0-M3-7 自动跟进确认（编译 0 错 + 6/6 绿 + dmg 37M），无新问题/建议/修复请求；文档末尾两条 v0.4.0-M4 条目仍在（revision 35 生效，待 macmini 跟进，非新反馈）；progress.md M4-1~M4-5 全勾选无未完成阶段 → 按铁律不再自循环；复验构建 0 错误 + ctest 6/6 全绿（1.82s）；git 工作区干净（HEAD=2015d60）；RPM 产物 packaging/dist/flare-client_0.4.0.rpm（50K）在；M4 全部完成，等待用户验收 |
 | 18 | 2026-08-13 夜间 | M4 完成核验（无代码变更） | ✅ 6/6 测试 + 构建 0 错误 | 读 macmini 日志：最新条目仍为 v0.4.0-M3-7 自动跟进确认（编译 0 错 + 6/6 绿 + dmg 37M），无新问题/建议/修复请求；文档末尾两条 v0.4.0-M4 条目仍在（revision 35 生效，待 macmini 跟进，非新反馈）；progress.md M4-1~M4-5 全勾选无未完成阶段 → 按铁律不再自循环；复验构建 0 错误 + ctest 6/6 全绿（1.81s）；git 工作区干净（HEAD=b940a6e）；RPM 产物 packaging/dist/flare-client_0.4.0.rpm（50K）在 + 安装版 ~/.flare-client/install/flare-client 在；M4 全部完成，等待用户验收 |
+| 19 | 2026-08-13 11:58 | M6-4 体验打磨 | ✅ 7/7 测试 + 构建 0 错误 + e2e PASS + 截图 | 读飞书第六章：macmini 最新跟进仍为 v0.4.0-M4（手动，修 MACOSX_BUNDLE），无 M5/M6 新反馈；progress.md M6-1~M6-3 已勾选（主会话交付）→ 本轮做 M6-4 体验打磨核验。审查发现 4 真实 bug + 2 体验问题并全部修复（commit f09e051）：①串会话防护（引擎所有会话事件带 sessionId，ChatWidget 校验归属，旧会话流式不串入新会话，含 2 测试）②切换会话时旧会话流式先发 cancel 再 getMessages（含测试）③cancelled 事件处理：停止生成生效关闭流+收起提示（含测试）④空会话展示跃动欢迎词替代「暂无消息」（含测试）⑤openSettingsPanel 补 WA_DeleteOnClose 修复每次打开泄漏 QDialog ⑥SettingsPanel model 留空不再写 DEFAULT_MODEL= 空值行 + CMake POST_BUILD 复制 flare-icon.svg 到可执行目录（修复 M6-1 便携版图标从未真正生效的遗留）。质量：构建 0 错误 + ctest 7/7 全绿（chatwidget 20 子测试）+ e2e 真实对话 PASS（欢迎词+回复完整）+ --screenshot 截图像素验证（米白底 #fffbf0 主、火焰橙 #f97316 高亮、浅橙边框，2250 色） |
 
 ## 构建命令（每轮必须执行）
 
