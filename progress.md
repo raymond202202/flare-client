@@ -49,6 +49,16 @@
   ⑥ SettingsPanel model 留空不再写空值行；CMake POST_BUILD 复制 flare-icon.svg 到可执行目录（修复便携版图标未生效遗留）
   质量：构建 0 错误 + 7/7 ctest 全绿（chatwidget 20 子测试）+ e2e 真实对话 PASS + 截图像素验证（火焰主题配色正确）
 
+## 【✅ 已完成】M7 增量迭代（2026-08-13 主会话推进）
+
+- [x] M7-1 同步 macmini 实机修复：CMakeLists Darwin 分支补 MACOSX_BUNDLE 属性（commit d4c7944，第 20 轮 cron）
+- [x] M7-2 会话搜索 + 归档视图（commit 1648792）：
+  ① EngineBridge 新增 searchSessions(query, limit) / archivedSessions()（协议 list_archived_sessions，响应 archived_sessions）
+  ② 侧边栏顶部搜索框：输入关键词实时 search_sessions 过滤，清空回 recent_sessions
+  ③ 📦 归档按钮：list_archived_sessions → 归档会话列表
+  ④ 防旧响应覆盖：搜索框清空后迟到 search_sessions 响应不覆盖列表（含测试）
+  ⑤ 质量：构建 0 错误 + 7/7 ctest 全绿（新增 3 测试）+ e2e 真实引擎验证（search 命中 + archived 往返）+ 截图像素验证（搜索框/归档按钮/火焰色系正确）
+
 ## 迭代记录
 
 | 轮次 | 时间 | 完成 | 构建 | 备注 |
