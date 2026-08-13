@@ -96,6 +96,16 @@ set(CPACK_RPM_PACKAGE_REQUIRES "qt6-qtbase >= 6.5")
 
 # ---------- macOS DMG 支持（macmini 端已实机验证，fedora 侧提供 CMake 配置）----------
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+  # M7-1: 显式声明 macOS App Bundle 属性（同步 macmini 实机反馈的修复：
+  #       缺 MACOSX_BUNDLE 时 CPack DragNDrop 打出的是裸可执行文件而非 .app，
+  #       macmini 真机打 dmg 发现无 .app，本地修复后同步回 fedora 源码）
+  set_target_properties(flare-client PROPERTIES
+    MACOSX_BUNDLE TRUE
+    MACOSX_BUNDLE_BUNDLE_NAME "Flare Client"
+    MACOSX_BUNDLE_GUI_IDENTIFIER "com.flare.client"
+    MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
+    MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION}
+  )
   set(CPACK_GENERATOR "DragNDrop")
   set(CPACK_DMG_VOLUME_NAME "Flare Client ${CPACK_PACKAGE_VERSION}")
   set(CPACK_PACKAGING_INSTALL_PREFIX "/Applications")
