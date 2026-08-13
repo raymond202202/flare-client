@@ -15,13 +15,24 @@
 - [x] M3-7 全量测试回归：ctest 全绿 + e2e 冒烟 PASS + 截图留档
 - [x] 闪退修复（2026-08-12 晚）：引擎事件重入崩溃 + confirm 弹窗嵌套事件循环（commit 40db764）
 
-## 【🔴 当前最高优先级】M4 打包交付 + 体验打磨
+## 【✅ 已完成】M4 打包交付 + 体验打磨（2026-08-13 全部交付）
 
 - [x] M4-1 Fedora RPM 打包：CMake CPack → .rpm，安装到系统验证开始菜单可启动
 - [x] M4-2 Windows 打包流程：交叉编译/CI 方案（Qt 6 静态或 mingw），产出 exe 安装包
 - [x] M4-3 macOS dmg：macmini 端已产出（37M），fedora 侧提供 CMake 支持验证
 - [x] M4-4 自动清理联动：打包后自动执行 cleanup-old-builds.sh（保留最新 3 个）
 - [x] M4-5 体验打磨：按用户实机反馈修复（闪退残余问题、UI 细节、易用性）
+
+## 【🔴 当前最高优先级】M5 用户反馈改版（2026-08-13 用户实机意见）
+
+> 用户意见原文：「我还没看产品…主色调改为之前做命令行版时我要求的红橙黄等火焰活力色系。每个会话都要在会话之初展示我们之前命令行版设计的跃动版欢迎词。左边面板我看到了记忆按钮，但没看到skill按钮，左边面板每个会话展示的太简单，让人看不出来哪个会话是什么，且点进去看不到历史消息。」
+> 视觉规范来源：`~/hermes-projects/flare/src/cli/flame-banner.ts`（FLAME_TOKENS：红 #ef4444 / 橙 #f97316 / 琥珀 #f59e0b / 黄 #fbbf24；flameColor() 红→橙→黄插值；欢迎词 "F L A R E" + "Let your inspiration flare 🔥"）
+
+- [ ] M5-1 火焰主题换肤：全 UI 紫色 → 火焰色系（主色橙 #f97316、强调红 #ef4444、高亮黄 #fbbf24），移植 flameColor() 渐变到 Qt（QColor 插值）
+- [ ] M5-2 跃动欢迎词：每个会话开始时展示命令行版同款欢迎词（F L A R E + Let your inspiration flare 🔥，火焰渐变 + 呼吸动画 QTimer 驱动）
+- [ ] M5-3 Skill 按钮：左侧面板新增 Skill 入口（发 `tools` 命令 → 展示可用工具/技能列表面板）
+- [ ] M5-4 会话列表增强：改用 `recent_sessions`（含 preview 首条消息预览 + updatedAt 时间）展示，让会话可识别
+- [ ] M5-5 历史消息加载：切换会话时发 `get_messages` 加载历史消息并渲染到消息区（当前切会话只清空）
 - [x] （2026-08-13 02:10 第 15 轮核验）M4 全部完成待用户验收；飞书文档已补同步 M4 条目（revision 35）
 
 ## 迭代记录
