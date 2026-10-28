@@ -47,3 +47,12 @@ target_link_libraries(e2e_acceptance PRIVATE Qt6::Widgets flare_client_core)
 # 重入安全复现（真实引擎 + 工具调用 + confirm 弹窗自动点击；手动运行）
 add_executable(reentrancy_live reentrancy_live.cpp)
 target_link_libraries(reentrancy_live PRIVATE Qt6::Widgets flare_client_core)
+
+# M8-1 版本与更新（GUI 版本 + 内核名字/版本，两条检查互相独立）
+add_executable(t_version version_test.cpp)
+target_link_libraries(t_version PRIVATE Qt6::Test flare_client_core)
+add_test(NAME version COMMAND t_version)
+
+# 手动视觉验证工具（不注册 ctest）：主窗口状态栏 + 版本面板截图 + 真实更新检查
+add_executable(panel_capture panel_capture.cpp)
+target_link_libraries(panel_capture PRIVATE Qt6::Widgets flare_client_core)

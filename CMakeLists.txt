@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(flare-client VERSION 0.4.0 LANGUAGES CXX)
+project(flare-client VERSION 0.5.0 LANGUAGES CXX)
 
 # ============================================================
 # Flare GUI 客户端 — 三平台统一 Qt 6 Widgets
@@ -18,7 +18,8 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 # ---------- Qt 6 依赖 ----------
-find_package(Qt6 REQUIRED COMPONENTS Widgets Test)
+# Network：版本面板的「检查更新」走 GitHub Releases API（HTTP GET + JSON）
+find_package(Qt6 REQUIRED COMPONENTS Widgets Network Test)
 
 # ---------- 核心库（主程序 + 测试共用）----------
 add_library(flare_client_core STATIC
@@ -34,11 +35,19 @@ add_library(flare_client_core STATIC
   src/skillpanel.cpp
   src/settingspanel.h
   src/settingspanel.cpp
+  src/versionpanel.h
+  src/versionpanel.cpp
+  src/updatechecker.h
+  src/updatechecker.cpp
   engine-bridge/engine_bridge.h
   engine-bridge/engine_bridge.cpp
 )
-target_link_libraries(flare_client_core PUBLIC Qt6::Widgets)
+target_link_libraries(flare_client_core PUBLIC Qt6::Widgets Qt6::Network)
 target_include_directories(flare_client_core PUBLIC src engine-bridge)
+
+# 客户端版本单一来源：CMake project VERSION → 编译期宏，main.cpp / mainwindow.cpp 共用
+# （展示的 GUI 版本与仓库 tag / RPM 包版本永远一致，不需要手改 C++ 里的字符串）
+target_compile_definitions(flare_client_core PUBLIC FLARE_CLIENT_VERSION="${PROJECT_VERSION}")
 
 # ---------- 主程序 ----------
 add_executable(flare-client src/main.cpp)

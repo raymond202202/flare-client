@@ -4,6 +4,7 @@
 #include "memorypanel.h"
 #include "skillpanel.h"
 #include "settingspanel.h"
+#include "versionpanel.h"
 
 #include <QStatusBar>
 #include <QSplitter>
@@ -11,10 +12,16 @@
 #include <QDialog>
 #include <QVBoxLayout>
 #include <QLabel>
+#include <QPushButton>
 #include <QJsonObject>
 #include <QIcon>
 #include <QFile>
 #include <QCoreApplication>
+
+// 客户端自身版本：编译期由 CMake 的 FLARE_CLIENT_VERSION 注入（source point = CMakeLists.txt VERSION）
+#ifndef FLARE_CLIENT_VERSION
+#define FLARE_CLIENT_VERSION "0.0.0"
+#endif
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -85,6 +92,23 @@ MainWindow::MainWindow(QWidget *parent)
     m_modelLabel->setStyleSheet(QStringLiteral("color:#f97316; padding:0 8px;"));
     statusBar()->addPermanentWidget(m_modelLabel);
 
+    // 版本入口：状态栏常显「客户端 vX · 内核 flare vY」，点击打开版本与更新面板
+    // 两个版本号来源不同（编译期 vs 运行时 version 帧），故不可拼成单一版本号
+    m_versionButton = new QPushButton(this);
+    m_versionButton->setObjectName(QStringLiteral("versionButton"));
+    m_versionButton->setText(versionText());
+    m_versionButton->setCursor(Qt::PointingHandCursor);
+    m_versionButton->setToolTip(QStringLiteral("查看版本并分别检查客户端 / 内核更新"));
+    m_versionButton->setFlat(true);
+    m_versionButton->setFocusPolicy(Qt::NoFocus);
+    m_versionButton->setStyleSheet(QStringLiteral(
+        "QPushButton { border:none; color:#b45309; background:transparent;"
+        "              font-size:12px; padding:0 6px; }"
+        "QPushButton:hover { color:#f97316; text-decoration:underline; }"
+        "QPushButton:pressed { color:#c2410c; }"));
+    connect(m_versionButton, &QPushButton::clicked, this, &MainWindow::openVersionPanel);
+    statusBar()->addPermanentWidget(m_versionButton);
+
     // 启动 flare server（后台，不阻塞 UI）
     if (m_engine->start()) {
         statusBar()->showMessage(QStringLiteral("Flare 引擎已连接"));
@@ -100,7 +124,18 @@ MainWindow::MainWindow(QWidget *parent)
 // 安全：绝不读取/显示 apiKey、baseURL 等敏感字段
 void MainWindow::onEngineEvent(const QJsonObject &obj)
 {
-    if (obj.value(QStringLiteral("type")).toString() != QLatin1String(FlareEvent::Models))
+    const QString type = obj.value(QStringLiteral("type")).toString();
+
+    // version 帧：内核名字固定 flare，版本与协议号来自内核自报
+    if (type == QLatin1String(FlareEvent::Version)) {
+        m_kernelVersion = obj.value(QStringLiteral("engine")).toString();
+        m_protocolVersion = obj.value(QStringLiteral("protocol")).toString();
+        if (m_versionButton)
+            m_versionButton->setText(versionText());
+        return;
+    }
+
+    if (type != QLatin1String(FlareEvent::Models))
         return;
     const QJsonObject configured = obj.value(QStringLiteral("configured")).toObject();
     const QJsonObject main = configured.value(QStringLiteral("main")).toObject();
@@ -165,6 +200,31 @@ void MainWindow::openSettingsPanel()
     layout->setContentsMargins(0, 0, 0, 0);
     layout->addWidget(panel);
     dlg->exec();
+}
+
+// 状态栏版本文本：客户端版本（编译期）+ 内核名字与版本（运行时 version 帧）
+QString MainWindow::versionText() const
+{
+    const QString gui = QCoreApplication::applicationVersion().isEmpty()
+                            ? QStringLiteral(FLARE_CLIENT_VERSION)
+                            : QCoreApplication::applicationVersion();
+    QString text = QStringLiteral("客户端 v%1").arg(gui);
+    if (m_kernelVersion.isEmpty())
+        text += QStringLiteral(" · 内核 flare 未连接");
+    else
+        text += QStringLiteral(" · 内核 flare v%1").arg(m_kernelVersion);
+    return text;
+}
+
+// 版本与更新面板：GUI / 内核各自一行、各自一个「检查更新」，互不影响
+void MainWindow::openVersionPanel()
+{
+    const QString gui = QCoreApplication::applicationVersion().isEmpty()
+                            ? QStringLiteral(FLARE_CLIENT_VERSION)
+                            : QCoreApplication::applicationVersion();
+    auto *dlg = new VersionPanel(gui, m_kernelVersion, m_protocolVersion, this);
+    dlg->setAttribute(Qt::WA_DeleteOnClose);
+    dlg->show();
 }
 
 MainWindow::~MainWindow() = default;
