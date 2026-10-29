@@ -75,19 +75,29 @@ jobs:
           ls -lh ../native/windows/engine/flare.exe
           ./../native/windows/engine/flare.exe --version || true
 
-      - name: Setup MSBuild
-        uses: microsoft/setup-msbuild@v2
+      # setup-msbuild@v2 只把 msbuild 塞进 PowerShell 的 PATH，Git Bash 里仍是
+      # command not found（exit 127），所以用 vswhere 取绝对路径后统一走 env。
+      - name: 定位 MSBuild
+        shell: powershell
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $mb = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -find "MSBuild\**\Bin\MSBuild.exe" |
+                Select-Object -First 1
+          if (-not $mb) { throw "MSBuild 未找到" }
+          "MSBUILD=$mb" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "MSBuild: $mb"
 
       - name: Restore（NuGet）
         shell: bash
         working-directory: native/windows
-        run: msbuild FlareWin.csproj -t:Restore -p:Configuration=Release -v:m
+        run: |
+          "$MSBUILD" FlareWin.csproj -t:Restore -p:Configuration=Release -v:m
 
       - name: 编译 WPF 壳
         shell: bash
         working-directory: native/windows
         run: |
-          msbuild FlareWin.csproj -p:Configuration=Release -p:Platform=x64 \
+          "$MSBUILD" FlareWin.csproj -p:Configuration=Release -p:Platform=x64 \
             -p:Version="${VERSION}" -p:FileVersion="${VERSION}.0" \
             -p:AssemblyVersion="${VERSION}.0" \
             -v:m -warnaserror:false

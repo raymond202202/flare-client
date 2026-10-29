@@ -312,7 +312,8 @@ struct ChatView: View {
                         ForEach(engine.blocks) { b in
                             BlockView(block: b).id(b.id)
                         }
-                        Color.clear.frame(height: 1).id("bottom")
+                        // 底部留白 14pt：滚到底时最后一条气泡不贴滚动区下边框（此前 1pt 会显得被切断）
+                        Color.clear.frame(height: 14).id("bottom")
                     }
                     .padding(8)
                     .frame(maxWidth: .infinity, alignment: .leading)
