@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Flare Windows 壳（WPF / .NET Framework 4.8）
+
+    为什么是 .NET Framework 4.8 而不是 .NET 8：
+      Win10 1809+ / Win11 全部自带 4.8 运行时，用户**零安装**；
+      而 .NET 8 Desktop Runtime 需要用户额外装 55MB，违反「把用户当傻子」原则。
+      包体：壳 ~500KB + 内置引擎 flare.exe ~11MB ≈ 12MB，低于飞书 20MB 单文件上限。
+
+    构建：GitHub Actions windows-latest（msbuild 自带 4.8 targeting pack），
+          见 .github/workflows/native-windows.yml。
+  -->
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <PlatformTarget>x64</PlatformTarget>
+    <Platforms>x64</Platforms>
+    <!-- net48 不需要 RuntimeIdentifier（那是 .NET Core/5+ 自包含的概念），留着反而触发 RID 解析告警 -->
+    <AssemblyName>Flare</AssemblyName>
+    <RootNamespace>FlareWin</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Deterministic>true</Deterministic>
+    <Version>0.6.163</Version>
+    <FileVersion>0.6.163.0</FileVersion>
+    <AssemblyVersion>0.6.163.0</AssemblyVersion>
+    <Product>Flare</Product>
+    <Company>Flare</Company>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <!-- 单文件外观：无控制台窗口 -->
+    <DebugType>none</DebugType>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
+  <!-- 内置引擎目录：build.ps1 把 flare.exe 拷到 engine\ 下，此处仅标记为内容不入编译 -->
+  <ItemGroup>
+    <!-- 用 Update 而不是 Include：SDK 风格项目已默认把所有文件收进 None，
+         Include 会造成 NETSDK1022 重复项。engine\ 下的 exe 需随输出复制。 -->
+    <None Update="engine\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

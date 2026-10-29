@@ -1,0 +1,158 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:local="clr-namespace:FlareWin">
+
+  <!-- 转换器 -->
+  <local:BoolToVis x:Key="BoolToVis" />
+  <local:EmptyToVis x:Key="EmptyToVis" />
+  <local:CountToVis x:Key="CountToVis" />
+
+  <!-- ========== 按钮：主行动（明亮紫橙渐变主色） ========== -->
+  <Style x:Key="PrimaryBtn" TargetType="Button">
+    <Setter Property="Background" Value="{x:Static local:Theme.Orange}" />
+    <Setter Property="Foreground" Value="White" />
+    <Setter Property="FontSize" Value="{x:Static local:Theme.FontList}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Padding" Value="16,7" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="SnapsToDevicePixels" Value="True" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Border x:Name="bd" Background="{TemplateBinding Background}"
+                  CornerRadius="8" Padding="{TemplateBinding Padding}">
+            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="bd" Property="Background" Value="{x:Static local:Theme.BtnHover}" />
+            </Trigger>
+            <Trigger Property="IsPressed" Value="True">
+              <Setter TargetName="bd" Property="Background" Value="{x:Static local:Theme.BtnPressed}" />
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+              <Setter TargetName="bd" Property="Background" Value="{x:Static local:Theme.BtnDisabled}" />
+              <Setter Property="Foreground" Value="{x:Static local:Theme.TextMuted}" />
+              <Setter Property="Cursor" Value="Arrow" />
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- ========== 按钮：幽灵（侧栏/次级操作） ========== -->
+  <Style x:Key="GhostBtn" TargetType="Button">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="{x:Static local:Theme.TextSoft}" />
+    <Setter Property="FontSize" Value="{x:Static local:Theme.FontList}" />
+    <Setter Property="Padding" Value="10,6" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Border x:Name="bd" Background="{TemplateBinding Background}"
+                  CornerRadius="7" Padding="{TemplateBinding Padding}">
+            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="bd" Property="Background" Value="{x:Static local:Theme.BgAlt}" />
+              <Setter Property="Foreground" Value="{x:Static local:Theme.TextMain}" />
+            </Trigger>
+            <Trigger Property="IsPressed" Value="True">
+              <Setter TargetName="bd" Property="Background" Value="{x:Static local:Theme.HoverSoft}" />
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- ========== 按钮：停止（白底红描边，与发送互斥显示） ========== -->
+  <Style x:Key="StopBtn" TargetType="Button">
+    <Setter Property="Background" Value="White" />
+    <Setter Property="Foreground" Value="{x:Static local:Theme.Red}" />
+    <Setter Property="BorderBrush" Value="{x:Static local:Theme.StopBorder}" />
+    <Setter Property="FontSize" Value="{x:Static local:Theme.FontList}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Padding" Value="14,7" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Border x:Name="bd" Background="{TemplateBinding Background}"
+                  BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1"
+                  CornerRadius="8" Padding="{TemplateBinding Padding}">
+            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="bd" Property="Background" Value="{x:Static local:Theme.StopHoverBg}" />
+            </Trigger>
+            <Trigger Property="IsPressed" Value="True">
+              <Setter TargetName="bd" Property="Background" Value="{x:Static local:Theme.StopPressedBg}" />
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- ========== 侧栏会话项 ========== -->
+  <Style x:Key="SideItem" TargetType="ListBoxItem">
+    <Setter Property="Padding" Value="10,8" />
+    <Setter Property="Margin" Value="0,1" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ListBoxItem">
+          <Border x:Name="bd" Background="Transparent" CornerRadius="8"
+                  Padding="{TemplateBinding Padding}">
+            <ContentPresenter />
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="bd" Property="Background" Value="{x:Static local:Theme.BgSoft}" />
+            </Trigger>
+            <Trigger Property="IsSelected" Value="True">
+              <Setter TargetName="bd" Property="Background" Value="{x:Static local:Theme.BgAlt}" />
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- ========== 多行输入框（圆角，无默认边框） ========== -->
+  <Style x:Key="ChatInput" TargetType="TextBox">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Foreground" Value="{x:Static local:Theme.TextMain}" />
+    <Setter Property="CaretBrush" Value="{x:Static local:Theme.Orange}" />
+    <Setter Property="FontSize" Value="{x:Static local:Theme.FontBody}" />
+    <Setter Property="TextBoxBase.IsUndoEnabled" Value="True" />
+    <Setter Property="AcceptsReturn" Value="True" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+    <Setter Property="VerticalScrollBarVisibility" Value="Auto" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="TextBox">
+          <ScrollViewer x:Name="PART_ContentHost" Padding="{TemplateBinding Padding}"
+                        VerticalScrollBarVisibility="{TemplateBinding VerticalScrollBarVisibility}" />
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- ========== 卡片容器 ========== -->
+  <Style x:Key="Card" TargetType="Border">
+    <Setter Property="Background" Value="{x:Static local:Theme.BgSoft}" />
+    <Setter Property="BorderBrush" Value="{x:Static local:Theme.BorderSoft}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="10" />
+    <Setter Property="Padding" Value="14,12" />
+  </Style>
+
+</ResourceDictionary>

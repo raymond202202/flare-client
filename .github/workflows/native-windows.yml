@@ -1,0 +1,117 @@
+# ============================================================
+# Flare Windows 原生壳 CI（WPF / .NET Framework 4.8 + 内置 Go 引擎）
+#
+# 为什么在 CI 里构建：
+#   1. WPF 只能在 Windows 上编译（本机是 Fedora）；
+#   2. windows-latest 自带 VS2022 与 .NET Framework 4.8 targeting pack，
+#      终端用户机器只需自带运行时即可运行，零安装；
+#   3. 引擎由 Go 交叉编译产出 flare.exe 后塞进壳目录，GUI 包自带引擎，
+#      用户不需要装 Node / 不是版本号工程师。
+#
+# 触发：手动 workflow_dispatch，或 push 改动 native/windows + 本文件。
+# ============================================================
+name: native-windows
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "版本号（留空则用仓库根的 VERSION 文件）"
+        required: false
+        default: ""
+  push:
+    branches: [master, main]
+    paths:
+      - "native/windows/**"
+      - "native/protocol/**"
+      - ".github/workflows/native-windows.yml"
+
+env:
+  FLARE_REPO: raymond202202/flare
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout（GUI 壳）
+        uses: actions/checkout@v4
+
+      - name: Checkout（Go 引擎主线）
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.FLARE_REPO }}
+          path: engine-src
+
+      - name: 解析版本号
+        shell: bash
+        run: |
+          V="${{ github.event.inputs.version }}"
+          if [ -z "$V" ]; then
+            if [ -f VERSION ]; then
+              V="$(tr -d ' \r\n' < VERSION)"
+            else
+              V="$(grep -oE 'var Version = "[^"]+"' engine-src/cmd/flare/main.go | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
+            fi
+          fi
+          echo "VERSION=$V" >> "$GITHUB_ENV"
+          echo "构建版本：$V"
+
+      - name: 安装 Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: engine-src/go.mod
+          cache-dependency-path: engine-src/go.sum
+
+      - name: 交叉编译引擎（windows/amd64，静态、无 CGO）
+        shell: bash
+        working-directory: engine-src
+        run: |
+          mkdir -p ../native/windows/engine
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 \
+            go build -trimpath -ldflags "-s -w -X main.Version=${VERSION}" \
+            -o ../native/windows/engine/flare.exe ./cmd/flare
+          ls -lh ../native/windows/engine/flare.exe
+          ./../native/windows/engine/flare.exe --version || true
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Restore（NuGet）
+        shell: bash
+        working-directory: native/windows
+        run: msbuild FlareWin.csproj -t:Restore -p:Configuration=Release -v:m
+
+      - name: 编译 WPF 壳
+        shell: bash
+        working-directory: native/windows
+        run: |
+          msbuild FlareWin.csproj -p:Configuration=Release -p:Platform=x64 \
+            -p:Version="${VERSION}" -p:FileVersion="${VERSION}.0" \
+            -p:AssemblyVersion="${VERSION}.0" \
+            -v:m -warnaserror:false
+
+      - name: 组装绿色包
+        shell: bash
+        run: |
+          OUT="native/windows/bin/x64/Release"
+          test -f "$OUT/Flare.exe"
+          PKG="flare-win-x64-${VERSION}"
+          mkdir -p "dist/$PKG/engine"
+          cp "$OUT/Flare.exe" "dist/$PKG/"
+          cp "$OUT/Flare.exe.config" "dist/$PKG/" 2>/dev/null || true
+          cp "$OUT/Newtonsoft.Json.dll" "dist/$PKG/"
+          cp native/windows/engine/flare.exe "dist/$PKG/engine/"
+          cp native/windows/README-WINDOWS.txt "dist/$PKG/README.txt" 2>/dev/null || true
+          printf '[Desktop Entry 无关；双击 Flare.exe 即可运行，引擎已内置]\r\n' > /dev/null
+          (cd dist && 7z a -tzip -mx=9 "${PKG}.zip" "$PKG" >/dev/null)
+          ls -lh "dist/${PKG}.zip"
+          echo "PKG_PATH=dist/${PKG}.zip" >> "$GITHUB_ENV"
+
+      - name: 上传 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: flare-win-x64
+          path: ${{ env.PKG_PATH }}
+          if-no-files-found: error
