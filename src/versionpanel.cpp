@@ -9,9 +9,9 @@
 #include <QVBoxLayout>
 
 namespace {
-// 两个仓库常量：GUI 归 flare-client，内核归 flare；改这里即可换比对源
+// 两个仓库常量：GUI 归 flare-client，内核归 flare（Go 引擎主线，原名 flare-go）；改这里即可换比对源
 const char *kGuiRepo = "raymond202202/flare-client";
-const char *kKernelRepo = "raymond202202/flare";
+const char *kKernelRepo = "raymond202202/flare"; // 2026-10 起该仓库即 Go 引擎主线（Node 版已改名 flare-node）
 const char *kKernelName = "flare"; // 内核产品名固定（对齐 `flare version` → "flare v0.6.161"）
 
 // 结论后面附上 Release 页地址（纯文本，可选中复制）
