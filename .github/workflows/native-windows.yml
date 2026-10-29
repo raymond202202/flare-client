@@ -105,8 +105,14 @@ jobs:
       - name: 组装绿色包
         shell: bash
         run: |
-          OUT="native/windows/bin/x64/Release"
-          test -f "$OUT/Flare.exe"
+          # SDK 风格项目会把 TFM 拼进输出路径：bin/x64/Release/net48/
+          OUT="native/windows/bin/x64/Release/net48"
+          if [ ! -f "$OUT/Flare.exe" ]; then
+            echo "::error::找不到 Flare.exe，实际输出目录："
+            find native/windows/bin -maxdepth 4 -type f | head -40
+            exit 1
+          fi
+          ls -lh "$OUT"
           PKG="flare-win-x64-${VERSION}"
           mkdir -p "dist/$PKG/engine"
           cp "$OUT/Flare.exe" "dist/$PKG/"
@@ -114,7 +120,6 @@ jobs:
           cp "$OUT/Newtonsoft.Json.dll" "dist/$PKG/"
           cp native/windows/engine/flare.exe "dist/$PKG/engine/"
           cp native/windows/README-WINDOWS.txt "dist/$PKG/README.txt" 2>/dev/null || true
-          printf '[Desktop Entry 无关；双击 Flare.exe 即可运行，引擎已内置]\r\n' > /dev/null
           (cd dist && 7z a -tzip -mx=9 "${PKG}.zip" "$PKG" >/dev/null)
           ls -lh "dist/${PKG}.zip"
           echo "PKG_PATH=dist/${PKG}.zip" >> "$GITHUB_ENV"
