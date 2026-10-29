@@ -123,10 +123,40 @@ jobs:
           (cd dist && 7z a -tzip -mx=9 "${PKG}.zip" "$PKG" >/dev/null)
           ls -lh "dist/${PKG}.zip"
           echo "PKG_PATH=dist/${PKG}.zip" >> "$GITHUB_ENV"
+          echo "PKG_DIR=dist/${PKG}" >> "$GITHUB_ENV"
+
+      # NSIS 由 windows-latest 镜像预装（Program Files (x86)\NSIS）。
+      # 找不到就跳过并留 warning —— 绿色 zip 依然可用，不让整条流水线红掉。
+      - name: 打安装向导（NSIS）
+        shell: bash
+        run: |
+          MAKENSIS=""
+          for c in "/c/Program Files (x86)/NSIS/makensis.exe" "/c/Program Files/NSIS/makensis.exe"; do
+            if [ -f "$c" ]; then MAKENSIS="$c"; break; fi
+          done
+          if [ -z "$MAKENSIS" ]; then
+            echo "::warning::镜像内未找到 NSIS，跳过安装包生成（绿色 zip 仍可用）"
+            exit 0
+          fi
+          echo "makensis: $MAKENSIS"
+          "$MAKENSIS" -V3 -INPUTCHARSET UTF8 \
+            -DVERSION="${VERSION}" \
+            -DSRCDIR="$(cygpath -w "$(pwd)/$PKG_DIR")" \
+            -DOUTDIR="$(cygpath -w "$(pwd)/dist")" \
+            native/windows/installer.nsi
+          SETUP="dist/flare-${VERSION}-win-x64-setup.exe"
+          if [ -f "$SETUP" ]; then
+            ls -lh "$SETUP"
+            echo "SETUP_PATH=$SETUP" >> "$GITHUB_ENV"
+          else
+            echo "::warning::NSIS 未产出 setup.exe"
+          fi
 
       - name: 上传 artifact
         uses: actions/upload-artifact@v4
         with:
           name: flare-win-x64
-          path: ${{ env.PKG_PATH }}
+          path: |
+            ${{ env.PKG_PATH }}
+            dist/*setup.exe
           if-no-files-found: error
