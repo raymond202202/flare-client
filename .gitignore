@@ -24,3 +24,7 @@ packaging/*.dmg
 packaging/*.rpm
 packaging/*.exe
 packaging/dist/
+
+# 原生壳构建产物与内置引擎（二进制不入库）
+native/*/engine/
+native/*/build/
