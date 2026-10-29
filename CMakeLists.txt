@@ -62,9 +62,16 @@ add_custom_command(TARGET flare-client POST_BUILD
           $<TARGET_FILE_DIR:flare-client>/flare-icon.svg
   COMMENT "复制 flare-icon.svg 到可执行文件目录（便携版窗口图标）")
 
-# Windows 子系统（无控制台窗口）
+# Windows 子系统（无控制台窗口）+ 内嵌 exe 图标
 if(WIN32)
   set_target_properties(flare-client PROPERTIES WIN32_EXECUTABLE TRUE)
+  # 把 .ico / 版本信息编进 exe：资源管理器、任务栏、快捷方式读的是 exe 内嵌图标，
+  # 不嵌的话显示系统默认空白图标。只在 MinGW 交叉编译时需要（MSVC 走 IDE 资源）。
+  if(MINGW)
+    enable_language(RC)
+    target_sources(flare-client PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/packaging/flare-client.rc)
+  endif()
 endif()
 
 # ---------- 测试（TDD） ----------

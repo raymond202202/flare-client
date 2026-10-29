@@ -1,5 +1,7 @@
 #include "engine_bridge.h"
 
+#include <QCoreApplication>
+#include <QFileInfo>
 #include <QJsonDocument>
 #include <QTimer>
 #include <QDebug>
@@ -54,8 +56,23 @@ bool EngineBridge::start(const QStringList &args)
         return false;
 
     m_process->setProcessChannelMode(QProcess::SeparateChannels);
-    // 查找 flare 可执行文件（PATH 或 ~/.flare/install）
-    m_process->start(QStringLiteral("flare"), args);
+    // 查找 flare 引擎，优先级：
+    //   1) 与本程序同目录的引擎 —— GUI 安装包把引擎一起打进去了
+    //      （macOS: Flare Client.app/Contents/MacOS/flare
+    //        Windows: C:\Program Files\Flare Client\flare.exe
+    //        Linux: /usr/lib64/flare-client/flare）
+    //      用户不需要额外下载引擎，也不需要 PATH 里有 flare。
+    //   2) 退回 PATH —— 开发环境，或用户自己装了命令行版引擎的情况。
+#ifdef Q_OS_WIN
+    const QString engineName = QStringLiteral("flare.exe");
+#else
+    const QString engineName = QStringLiteral("flare");
+#endif
+    const QString bundledEngine =
+        QCoreApplication::applicationDirPath() + QLatin1Char('/') + engineName;
+    m_process->start(QFileInfo::exists(bundledEngine) ? bundledEngine
+                                                      : QStringLiteral("flare"),
+                     args);
     return m_process->waitForStarted(3000);
 }
 

@@ -1,0 +1,49 @@
+/* Flare client Windows resource script.
+ *
+ * Purpose: embed the multi-size icon into flare-client.exe itself.
+ * Without this the exe shows Windows' generic blank icon in Explorer,
+ * the taskbar, Start-menu shortcuts and Alt-Tab.
+ *
+ * The icon is rendered from packaging/flare-client.svg
+ * (sizes 16/24/32/48/64/128/256).
+ *
+ * Two constraints learned the hard way:
+ *  1. Keep this file pure ASCII -- windres on Fedora reports a syntax
+ *     error for multi-byte characters even inside comments.
+ *  2. FILEOS / FILETYPE / FILESUBTYPE must be NUMERIC here. binutils
+ *     windres (2.46) does not define the symbolic constants
+ *     VOS_NT_WINDOWS32 / VFT_APP unless windows.h is included, and it
+ *     is not on the cross include path -> "syntax error".
+ *     numeric: VOS_NT_WINDOWS32=0x00040004, VFT_APP=0x1, VFT2_UNKNOWN=0x0
+ */
+
+IDI_ICON1 ICON "flare-client.ico"
+
+1 VERSIONINFO
+FILEVERSION     0,6,163,0
+PRODUCTVERSION  0,6,163,0
+FILEFLAGSMASK   0x3fL
+FILEFLAGS       0x0L
+FILEOS          0x00040004L
+FILETYPE        0x1L
+FILESUBTYPE     0x0L
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "080404b0"
+    BEGIN
+      VALUE "CompanyName",      "Flare"
+      VALUE "FileDescription",  "Flare AI Agent Client"
+      VALUE "FileVersion",      "0.6.163"
+      VALUE "InternalName",     "flare-client"
+      VALUE "LegalCopyright",   "MIT License"
+      VALUE "OriginalFilename", "flare-client.exe"
+      VALUE "ProductName",      "Flare Client"
+      VALUE "ProductVersion",   "0.6.163"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x804, 1200
+  END
+END
