@@ -130,12 +130,25 @@ jobs:
       - name: 打安装向导（NSIS）
         shell: bash
         run: |
-          MAKENSIS=""
-          for c in "/c/Program Files (x86)/NSIS/makensis.exe" "/c/Program Files/NSIS/makensis.exe"; do
-            if [ -f "$c" ]; then MAKENSIS="$c"; break; fi
-          done
+          # windows-latest(2025) 已不再预装 NSIS，装完是 chocolatey shim：
+          # C:\ProgramData\chocolatey\bin\makensis.exe
+          MAKENSIS="$(command -v makensis || true)"
           if [ -z "$MAKENSIS" ]; then
-            echo "::warning::镜像内未找到 NSIS，跳过安装包生成（绿色 zip 仍可用）"
+            for c in "/c/Program Files (x86)/NSIS/makensis.exe" \
+                     "/c/ProgramData/chocolatey/bin/makensis.exe"; do
+              if [ -f "$c" ]; then MAKENSIS="$c"; break; fi
+            done
+          fi
+          if [ -z "$MAKENSIS" ]; then
+            echo "镜像未预装 NSIS，用 chocolatey 安装…"
+            choco install nsis -y --no-progress >/dev/null 2>&1 || true
+            for c in "/c/ProgramData/chocolatey/bin/makensis.exe" \
+                     "/c/Program Files (x86)/NSIS/makensis.exe"; do
+              if [ -f "$c" ]; then MAKENSIS="$c"; break; fi
+            done
+          fi
+          if [ -z "$MAKENSIS" ]; then
+            echo "::warning::NSIS 安装失败，跳过安装包生成（绿色 zip 仍可用）"
             exit 0
           fi
           echo "makensis: $MAKENSIS"
