@@ -24,6 +24,7 @@ public:
 
     // 测试接口
     EngineBridge *engine() const { return m_engine.get(); }
+    qint64 enginePid() const { return m_engine ? m_engine->enginePid() : 0; }
     SessionListWidget *sessions() const { return m_sessions; }
     ChatWidget *chat() const { return m_chat; }
     void restoreWindowGeometry();

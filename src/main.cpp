@@ -49,7 +49,8 @@ int main(int argc, char *argv[])
                 << "      --view archived    截图前切到回收站视图\n"
                 << "      --scroll-bottom    截图前把会话列表滚到底（验证分页加载）\n"
                 << "      --close-test       按一次窗口关闭，打印「是否收进托盘」后退出\n"
-                << "      --paste-test       用剪贴板图片走一次粘贴，打印挂上的附件后退出\n";
+                << "      --paste-test       用剪贴板图片走一次粘贴，打印挂上的附件后退出\n"
+                << "      --workdir-test <d> 把工作目录切到 d，打印引擎重启前后的 pid 与真实 cwd\n";
             return 0;
         }
     }
@@ -65,6 +66,7 @@ int main(int argc, char *argv[])
     bool systemCheck = false;
     bool closeTest = false;
     bool pasteTest = false;
+    QString workdirTest;  // 非空 = 走一次「切换工作目录」自检
     for (int i = 1; i < argc; ++i) {
         const QString a = QString::fromLocal8Bit(argv[i]);
         if (a == QLatin1String("--screenshot") && i + 1 < argc)
@@ -80,6 +82,8 @@ int main(int argc, char *argv[])
             closeTest = true;
         else if (a == QLatin1String("--paste-test"))
             pasteTest = true;
+        else if (a == QLatin1String("--workdir-test") && i + 1 < argc)
+            workdirTest = QString::fromLocal8Bit(argv[++i]);
     }
 
     // --system-check：只查环境、不弹窗口。托盘可用性在无显示器/远程排障时
@@ -139,6 +143,33 @@ int main(int argc, char *argv[])
                     w.isVisible() ? 1 : 0, w.trayVisible() ? 1 : 0);
             fflush(stderr);
             app.exit(0);  // 自检结束，别把托盘图标留在用户桌面上
+        });
+        return app.exec();
+    }
+
+    // --workdir-test：用户要的「选择工作目录 / 读取本地文件」入口，
+    // 文件对话框本身没法自动点，但真正会出错的是后半段——「目录存下来了，
+    // 引擎却没换根」。所以读 /proc/<pid>/cwd 这个内核事实，而不是看界面文案。
+    if (!workdirTest.isEmpty()) {
+        auto procCwd = [](qint64 pid) -> QString {
+            if (pid <= 0)
+                return QStringLiteral("<no-engine>");
+            const QString t = QFile::symLinkTarget(QStringLiteral("/proc/%1/cwd").arg(pid));
+            return t.isEmpty() ? QStringLiteral("<unreadable>") : t;
+        };
+        QTimer::singleShot(700, &w, [&w, &workdirTest, procCwd]() {
+            const qint64 pid = w.enginePid();
+            fprintf(stderr, "BEFORE_WORKDIR pid=%lld engine_cwd=%s\n", static_cast<long long>(pid),
+                    qPrintable(procCwd(pid)));
+            w.applyWorkingDirectory(workdirTest);  // 与点状态栏 📂 按钮、拖文件夹进来同一段逻辑
+        });
+        QTimer::singleShot(3000, &w, [&w, &app, &workdirTest, procCwd]() {
+            const qint64 pid = w.enginePid();
+            fprintf(stderr, "AFTER_WORKDIR pid=%lld engine_cwd=%s want=%s\n",
+                    static_cast<long long>(pid), qPrintable(procCwd(pid)),
+                    qPrintable(workdirTest));
+            fflush(stderr);
+            app.exit(0);
         });
         return app.exec();
     }

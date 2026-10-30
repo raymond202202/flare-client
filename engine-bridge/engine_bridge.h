@@ -81,6 +81,9 @@ public:
     // 改目录后需重启引擎进程（stop + start）才对工具可见。
     void setWorkingDirectory(const QString &dir);
     QString workingDirectory() const { return m_workdir; }
+    // 引擎子进程 pid（<=0 表示没起来）。自检要读 /proc/<pid>/cwd 证明
+    // 「引擎真的以所选目录为根」，而不是只信界面上的文案。
+    qint64 enginePid() const { return m_process ? m_process->processId() : 0; }
 
 signals:
     // 每个 stdout 事件（含 chat 流式事件），obj = 完整 JSON

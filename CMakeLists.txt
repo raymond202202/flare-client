@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(flare-client VERSION 0.6.181 LANGUAGES CXX)
+project(flare-client VERSION 0.6.182 LANGUAGES CXX)
 
 # ============================================================
 # Flare GUI 客户端 — 三平台统一 Qt 6 Widgets
