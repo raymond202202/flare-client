@@ -47,6 +47,11 @@ public slots:
     void openVersionPanel();
     // M8: 选择工作目录（= 引擎工具读写本地文件的根目录），换完自动重启引擎
     void chooseWorkingDirectory();
+    // 选目录对话框与「把文件夹拖进窗口」共用同一段落盘 + 重启引擎逻辑
+    void applyWorkingDirectory(const QString &dir);
+    // 引擎断开后的原地重启入口：点了就重新拉起引擎，对话记录不动。
+    // 不能让用户为了恢复只能重开客户端 —— 那等于直接丢掉正在看的上下文。
+    void restartEngine();
 
 protected:
     // M8: 关闭窗口默认不退出 —— 有托盘就收进托盘，没托盘就最小化
@@ -54,6 +59,8 @@ protected:
 
 private:
     void setupTray();
+    // 状态栏引擎状态：连接成功/断开两态，断开时可点重启
+    void setEngineConnected(bool connected);
     QString workdirText() const;
     QString settingsFilePath() const;
 
@@ -63,6 +70,7 @@ private:
     QLabel *m_modelLabel = nullptr;
     QPushButton *m_versionButton = nullptr;
     QPushButton *m_workdirButton = nullptr;
+    QPushButton *m_engineButton = nullptr;   // 引擎状态 + 重启入口（状态栏常驻）
     // 首次使用没有 API Key 时的状态栏常驻提示（可点开设置）
     QPushButton *m_keyHintButton = nullptr;
     void checkApiKeyConfigured();

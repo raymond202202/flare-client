@@ -77,6 +77,16 @@ SessionListWidget::SessionListWidget(EngineBridge *bridge, QWidget *parent)
     , m_menu(new QMenu(this))
 {
     setFixedWidth(kSidebarWidth);
+    // 自动化验收定位锚点：e2e 曾经用 findChild<QLineEdit*>() 盲取第一个控件，
+    // 被这里的搜索框抢走，误报「消息没发出去」。每个可交互控件都留名字。
+    m_list->setObjectName(QStringLiteral("sessionList"));
+    m_searchBox->setObjectName(QStringLiteral("sessionSearch"));
+    m_newBtn->setObjectName(QStringLiteral("sessionNewButton"));
+    m_delBtn->setObjectName(QStringLiteral("sessionDeleteButton"));
+    m_archiveBtn->setObjectName(QStringLiteral("sessionTrashButton"));
+    m_memoryBtn->setObjectName(QStringLiteral("sessionMemoryButton"));
+    m_skillBtn->setObjectName(QStringLiteral("sessionSkillButton"));
+    m_settingsBtn->setObjectName(QStringLiteral("sessionSettingsButton"));
     loadPinned();
     loadAliases();
 
@@ -497,13 +507,16 @@ void SessionListWidget::rebuildMenu()
     m_menu->clear();
     const bool hasSel = currentItem() != nullptr;
 
+    // 菜单项也留名字：e2e 要能直接触发「归档」「恢复」而不靠中文文案匹配
     auto *pinAct = m_menu->addAction(hasSel && isPinned(currentSessionId())
                                          ? QStringLiteral("📌 取消置顶")
                                          : QStringLiteral("📌 置顶会话"));
+    pinAct->setObjectName(QStringLiteral("actionPin"));
     pinAct->setEnabled(hasSel);
     connect(pinAct, &QAction::triggered, this, &SessionListWidget::pinCurrent);
 
     auto *renameAct = m_menu->addAction(QStringLiteral("✏️ 重命名会话"));
+    renameAct->setObjectName(QStringLiteral("actionRename"));
     renameAct->setEnabled(hasSel);
     renameAct->setShortcut(QKeySequence(Qt::Key_F2));
     connect(renameAct, &QAction::triggered, this, &SessionListWidget::renameCurrent);
@@ -512,14 +525,17 @@ void SessionListWidget::rebuildMenu()
 
     if (m_archivedView) {
         auto *restoreAct = m_menu->addAction(QStringLiteral("↩️ 恢复到最近会话"));
+        restoreAct->setObjectName(QStringLiteral("actionRestore"));
         restoreAct->setEnabled(hasSel);
         connect(restoreAct, &QAction::triggered, this, &SessionListWidget::restoreCurrent);
 
         auto *purgeAct = m_menu->addAction(QStringLiteral("❌ 彻底删除（不可恢复）"));
+        purgeAct->setObjectName(QStringLiteral("actionPurge"));
         purgeAct->setEnabled(hasSel);
         connect(purgeAct, &QAction::triggered, this, &SessionListWidget::purgeCurrent);
     } else {
         auto *archAct = m_menu->addAction(QStringLiteral("📦 归档到归档箱"));
+        archAct->setObjectName(QStringLiteral("actionArchive"));
         archAct->setEnabled(hasSel);
         connect(archAct, &QAction::triggered, this, &SessionListWidget::archiveCurrent);
     }
@@ -530,6 +546,7 @@ void SessionListWidget::rebuildMenu()
 
     if (!m_archivedView) {
         auto *delAct = m_menu->addAction(QStringLiteral("🗑️ 移入回收站"));
+        delAct->setObjectName(QStringLiteral("actionTrash"));
         delAct->setEnabled(hasSel);
         connect(delAct, &QAction::triggered, this, &SessionListWidget::deleteCurrent);
     }
@@ -537,6 +554,7 @@ void SessionListWidget::rebuildMenu()
     m_menu->addSeparator();
     auto *toggleAct = m_menu->addAction(m_archivedView ? QStringLiteral("📂 返回最近会话")
                                                       : QStringLiteral("🗑️ 打开回收站"));
+    toggleAct->setObjectName(QStringLiteral("actionToggleTrash"));
     connect(toggleAct, &QAction::triggered, this, [this]() {
         if (m_archivedView)
             showRecent();

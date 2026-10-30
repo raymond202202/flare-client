@@ -17,6 +17,7 @@
 #include <QIcon>
 #include <QFile>
 #include <QFileInfo>
+#include <QMessageBox>
 #include <QDir>
 #include <QFileDialog>
 #include <QSettings>
@@ -101,6 +102,20 @@ MainWindow::MainWindow(QWidget *parent)
     // M8: 会话首条消息 → 侧边栏别名，让列表名字能看出会话内容
     connect(m_chat, &ChatWidget::firstMessageSent,
             m_sessions, &SessionListWidget::setLocalAlias);
+    // 文件夹拖进窗口 → 问一句要不要切成工作目录（不弹窗就默默重启引擎太粗暴）
+    connect(m_chat, &ChatWidget::directoryDropRequested, this,
+            [this](const QString &dir) {
+                if (dir == m_engine->workingDirectory())
+                    return; // 本来就是这块地，不用问也不用重启
+                const auto ret = QMessageBox::question(
+                    this, QStringLiteral("在这个文件夹里干活？"),
+                    QStringLiteral("把下面的文件夹设为工作目录？\n\n%1\n\n"
+                                   "设好之后 Flare 才能读写它里面的文件（会重启一次引擎）。")
+                        .arg(dir),
+                    QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
+                if (ret == QMessageBox::Yes)
+                    applyWorkingDirectory(dir);
+            });
 
     // M3-6: 状态栏右侧模型信息标签（只显示 model/provider）
     m_modelLabel = new QLabel(QStringLiteral("🤖 模型加载中…"), this);
@@ -123,6 +138,21 @@ MainWindow::MainWindow(QWidget *parent)
         "QPushButton:pressed { color:#c2410c; }"));
     connect(m_versionButton, &QPushButton::clicked, this, &MainWindow::openVersionPanel);
     statusBar()->addPermanentWidget(m_versionButton);
+
+    // 引擎状态常驻入口：断开时变成可点的「点击重启」。
+    // 用户丢掉一眼正在读的对话是不可接受的代价，所以必须能原地拉起来。
+    m_engineButton = new QPushButton(this);
+    m_engineButton->setObjectName(QStringLiteral("engineStatusButton"));
+    m_engineButton->setFlat(true);
+    m_engineButton->setFocusPolicy(Qt::NoFocus);
+    m_engineButton->setStyleSheet(QStringLiteral(
+        "QPushButton { border:none; background:transparent; font-size:12px;"
+        "              padding:0 6px; color:#b45309; }"
+        "QPushButton:hover { color:#f97316; text-decoration:underline; }"
+        "QPushButton:pressed { color:#c2410c; }"));
+    connect(m_engineButton, &QPushButton::clicked, this, &MainWindow::restartEngine);
+    statusBar()->addPermanentWidget(m_engineButton);
+    setEngineConnected(false);   // 启动前先按「断开」显示，连上再切
 
     // M8 工作目录：引擎工具沙箱根硬编码 os.Getwd()（internal/tools 里没有 cwd 参数），
     // 所以把用户选的目录当成引擎进程的工作目录传下去；换目录后重启引擎即生效
@@ -171,13 +201,29 @@ MainWindow::MainWindow(QWidget *parent)
     connect(scSettings, &QShortcut::activated, this, &MainWindow::openSettingsPanel);
 
     // 启动 flare server（后台，不阻塞 UI）
+    // 引擎掉了要立刻在状态栏反映出来，不能等用户发消息没反应才发现
+    connect(m_engine.get(), &EngineBridge::processExited, this, [this](int code) {
+        if (code == 0)
+            return;   // 自己 stop() 的正常退出
+        setEngineConnected(false);
+    });
+
     if (m_engine->start()) {
+        setEngineConnected(true);
         statusBar()->showMessage(QStringLiteral("Flare 引擎已连接"));
         m_engine->queryVersion();
         m_engine->queryModels();
         m_sessions->refresh();
     } else {
+        setEngineConnected(false);
         statusBar()->showMessage(QStringLiteral("⚠️ Flare 引擎启动失败（请确认 flare 已安装）"));
+        // 状态栏容易被忽略，对话区也摆一条：用户第一次打开就该知道发生了什么
+        if (m_chat)
+            m_chat->showEngineNotice(
+                QStringLiteral("安装包里的 flare 引擎没能启动。\n"
+                               "• Linux：确认 /usr/lib64/flare-client/flare 存在且有执行权限\n"
+                               "• 免安装版：确认 flare-client 同目录下有 flare\n"
+                               "• 若被安全软件隔离，加白名单后重开客户端"));
     }
 }
 
@@ -411,6 +457,13 @@ void MainWindow::chooseWorkingDirectory()
         start);
     if (dir.isEmpty())
         return;
+    applyWorkingDirectory(dir);
+}
+
+void MainWindow::applyWorkingDirectory(const QString &dir)
+{
+    if (dir.isEmpty() || !QFileInfo(dir).isDir())
+        return;
 
     QSettings(QSettings::IniFormat, QSettings::UserScope,
               QStringLiteral("flare"), QStringLiteral("flare-client"))
@@ -426,15 +479,58 @@ void MainWindow::chooseWorkingDirectory()
     // 引擎工具的沙箱根是进程 cwd，运行中改不了 → 重启一次
     m_engine->stop();
     if (m_engine->start()) {
+        setEngineConnected(true);
         statusBar()->showMessage(
             QStringLiteral("工作目录已切换到 %1，引擎已重启").arg(dir), 8000);
         m_engine->queryVersion();
         m_engine->queryModels();
         m_sessions->refresh();
     } else {
+        setEngineConnected(false);
         statusBar()->showMessage(
             QStringLiteral("⚠️ 切换工作目录后引擎重启失败"), 8000);
     }
+}
+
+void MainWindow::setEngineConnected(bool connected)
+{
+    if (!m_engineButton)
+        return;
+    if (connected) {
+        m_engineButton->setText(QStringLiteral("🔥 引擎已连接"));
+        m_engineButton->setToolTip(QStringLiteral("Flare 引擎正在运行"));
+        m_engineButton->setCursor(Qt::ArrowCursor);
+    } else {
+        m_engineButton->setText(QStringLiteral("⚠️ 引擎已断开 · 点击重启"));
+        m_engineButton->setToolTip(
+            QStringLiteral("Flare 引擎没在运行。点击原地重启，对话记录会保留。"));
+        m_engineButton->setCursor(Qt::PointingHandCursor);
+    }
+}
+
+void MainWindow::restartEngine()
+{
+    if (m_engine->isRunning()) {
+        statusBar()->showMessage(QStringLiteral("引擎正在运行，无需重启"), 3000);
+        return;
+    }
+    statusBar()->showMessage(QStringLiteral("正在重启 Flare 引擎…"));
+    m_engine->stop();
+    if (!m_engine->start()) {
+        setEngineConnected(false);
+        statusBar()->showMessage(QStringLiteral("⚠️ 引擎重启失败，请确认 flare 引擎还在原位"), 8000);
+        return;
+    }
+    setEngineConnected(true);
+    statusBar()->showMessage(QStringLiteral("Flare 引擎已重新连接"), 5000);
+    m_engine->queryVersion();
+    m_engine->queryModels();
+    if (m_sessions)
+        m_sessions->refresh();
+    if (m_chat)
+        m_chat->showEngineNotice(
+            QStringLiteral("🔗 引擎已重新连接。界面上的对话记录还在，"
+                           "但引擎侧是全新进程，接着说即可。"));
 }
 
 void MainWindow::setupTray()

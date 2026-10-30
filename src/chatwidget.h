@@ -8,6 +8,8 @@
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QStringList>
+#include <QHash>
+#include <QUrl>
 #include <memory>
 #include "engine_bridge.h"
 // ============================================================
@@ -28,15 +30,30 @@ public:
     QPushButton *attachButton() const { return m_attachBtn; }
     QPushButton *sendButton() const { return m_sendBtn; }
     QWidget *attachBar() const { return m_attachBar; }
+    // M10 拖放：把本地文件拖进窗口即挂成附件（拖放事件本身是 protected，
+    // 这里暴露一个可测入口，dragEnter/drop 都走它）
+    void attachLocalFiles(const QList<QUrl> &urls);
     QStringList attachments() const { return m_attachments; }
     QString outputText() const { return m_output->toPlainText(); }
     QString sessionId() const { return m_sessionId; }
+    // 引擎级故障（进程没起来 / 启动失败）要摆在对话区，不能只闪一下状态栏
+    void showEngineNotice(const QString &text);
+    // 草稿按会话隔离：切走再切回来，打的字和挂的附件都还在；
+    // 更重要的是，在 A 会话打的字不会跟着跑到 B 会话被误发出去。
+    struct Draft {
+        QString text;
+        QStringList files;
+    };
 
 signals:
     // M8 用户反馈「会话名看不出这个会话是干什么的」：
     // 首条消息发出后把内容片段抛给会话列表，列表用它作为该会话的本地别名。
     // （引擎侧自动标题要改数据层，先用宿主别名让名字立刻有意义）
     void firstMessageSent(const QString &sessionId, const QString &text);
+
+    // 把文件夹拖进窗口 ≠ 想把它当附件发出去（引擎读不出目录内容），
+    // 更自然的含义是「在这个目录下干活」→ 抛给 MainWindow 切工作目录
+    void directoryDropRequested(const QString &dir);
 
 public slots:
     void sendMessage();
@@ -52,10 +69,22 @@ protected:
     // M8 粘贴图片：QLineEdit 不支持富内容，在输入框上拦 Ctrl+V，
     // 剪贴板有图片就存成 png 附件，否则走默认文本粘贴。
     bool eventFilter(QObject *watched, QEvent *event) override;
+    // M10 拖放：从文件管理器把文件拖进来 = 附件（用户反馈要「读取本地文件的入口」，
+    // 拖放是比点 📎 更自然的入口）
+    void dragEnterEvent(QDragEnterEvent *event) override;
+    void dragLeaveEvent(QDragLeaveEvent *event) override;
+    void dropEvent(QDropEvent *event) override;
 
 private:
+    QHash<QString, Draft> m_drafts;
+    // 智能跟随滚动：用户正在往上翻读旧消息时，新内容不能把他拽回底部；
+    // 只有本来就在底部（贴着最新消息）才自动跟随。
+    bool nearBottom() const;
+    void scrollToBottom();
     // M8 附件（本地文件 / 剪贴板图片）
     void pickFiles();
+    // M10 拖放高亮：拖到面板上时消息区描边变橙，松手还原
+    void setDropHighlight(bool on);
     void addAttachment(const QString &path);
     void removeAttachment(const QString &path);
     void rebuildAttachChips();

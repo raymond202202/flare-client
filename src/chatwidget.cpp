@@ -5,6 +5,7 @@
 #include <QJsonValue>
 #include <QDateTime>
 #include <QTextCursor>
+#include <QScrollBar>
 #include <QTextCharFormat>
 #include <QColor>
 #include <QFont>
@@ -19,9 +20,39 @@
 #include <QClipboard>
 #include <QMimeData>
 #include <QImage>
+#include <QImageReader>
+#include <QIcon>
+#include <QPixmap>
 #include <QKeyEvent>
 #include <QKeySequence>
+#include <QDragEnterEvent>
+#include <QDragLeaveEvent>
+#include <QDropEvent>
+#include <QUrl>
 #include "flametheme.h"
+
+namespace {
+// 消息区样式（常态 / 拖放高亮共用一个来源，避免两处色值漂移）
+const char *kOutputStyle =
+    "QTextEdit { background:#fffbf0; border:1px solid #fde6bf; border-radius:8px;"
+    " font-size:14px; padding:8px; }";
+const char *kOutputStyleDrop =
+    "QTextEdit { background:#fff7ed; border:2px solid #f97316; border-radius:8px;"
+    " font-size:14px; padding:8px; }";
+
+// 一次能带几个附件：从文件管理器框一片文件拖进来是常事，几百个会把输入区顶到看不见
+constexpr int kMaxAttachments = 10;
+
+// 图片后缀（决定 chip 上给不给缩略图）
+bool looksLikeImage(const QFileInfo &fi)
+{
+    static const QStringList kImageSuffix{
+        QStringLiteral("png"),  QStringLiteral("jpg"), QStringLiteral("jpeg"),
+        QStringLiteral("webp"), QStringLiteral("gif"), QStringLiteral("bmp"),
+        QStringLiteral("svg"),  QStringLiteral("avif")};
+    return kImageSuffix.contains(fi.suffix().toLower());
+}
+} // namespace
 
 ChatWidget::ChatWidget(EngineBridge *bridge, QWidget *parent)
     : QWidget(parent)
@@ -32,6 +63,14 @@ ChatWidget::ChatWidget(EngineBridge *bridge, QWidget *parent)
     , m_stopBtn(new QPushButton(QStringLiteral("⏹ 停止"), this))
     , m_sessionId(QStringLiteral("gui-") + QString::number(QDateTime::currentMSecsSinceEpoch()))
 {
+    // M10 拖放：整个聊天面板接受文件拖入（文件管理器拖文件 = 附件）
+    setAcceptDrops(true);
+    // objectName 是自动化验收的定位锚点：曾经 e2e 用 findChild<QLineEdit*>()
+    // 盲取第一个控件，被侧边栏搜索框抢走，导致"消息没发出去"的假故障
+    m_output->setObjectName(QStringLiteral("chatOutput"));
+    m_input->setObjectName(QStringLiteral("chatInput"));
+    m_sendBtn->setObjectName(QStringLiteral("chatSendButton"));
+
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(12, 12, 12, 12);
     layout->setSpacing(8);
@@ -43,9 +82,7 @@ ChatWidget::ChatWidget(EngineBridge *bridge, QWidget *parent)
     // 消息区：只读、可选中复制
     m_output->setReadOnly(true);
     m_output->setPlaceholderText(QStringLiteral("等待对话…"));
-    m_output->setStyleSheet(QStringLiteral(
-        "QTextEdit { background:#fffbf0; border:1px solid #fde6bf; border-radius:8px;"
-        " font-size:14px; padding:8px; }"));
+    m_output->setStyleSheet(QString::fromLatin1(kOutputStyle));
     layout->addWidget(m_output, 1);
 
     // M8 附件 chip 行（用户反馈：输入框不能粘贴图片 / 没有读取本地文件的入口）
@@ -69,7 +106,7 @@ ChatWidget::ChatWidget(EngineBridge *bridge, QWidget *parent)
         "QPushButton:pressed { background:#ffe0b0; }"));
     inputRow->addWidget(m_attachBtn);
     m_input->setPlaceholderText(
-        QStringLiteral("输入消息，Enter 发送 · Ctrl+V 粘贴图片 · 📎 选本地文件"));
+        QStringLiteral("输入消息，Enter 发送 · Ctrl+V 粘贴图片 · 📎 选文件 · 也可直接把文件拖进来"));
     m_input->setStyleSheet(QStringLiteral(
         "QLineEdit { background:#ffffff; border:1px solid #fde6bf; border-radius:8px;"
         " padding:8px 10px; font-size:14px; }"
@@ -99,6 +136,19 @@ ChatWidget::ChatWidget(EngineBridge *bridge, QWidget *parent)
     connect(m_attachBtn, &QPushButton::clicked, this, &ChatWidget::pickFiles);
     m_input->installEventFilter(this);
     connect(m_bridge, &EngineBridge::eventReceived, this, &ChatWidget::onEngineEvent);
+    // 引擎进程中途崩掉时界面完全没反应，用户只看到「消息发出去了但没有回复」——
+    // 静默失败比报错难查得多，所以退出码非 0 就在对话区明说。
+    // 注意：不能连 processError（那是引擎 stderr 的全文转发，正常运行也可能有日志）。
+    connect(m_bridge, &EngineBridge::processExited, this, [this](int code) {
+        if (code == 0)
+            return; // 我们自己 stop() 的正常退出
+        if (m_streaming)
+            endStream();
+        appendMessage(QStringLiteral("⚠️ 引擎异常退出"),
+                      QStringLiteral("AI 内核进程退出了（退出码 %1）。"
+                                     "点左下角状态栏的「⚠️ 引擎已断开」可以原地重启，"
+                                     "对话记录不会丢。").arg(code));
+    });
 
     // M5-2: 启动即展示跃动欢迎词（火焰渐变 + 呼吸动画）
     m_breathTimer = new QTimer(this);
@@ -111,6 +161,10 @@ void ChatWidget::sendMessage()
 {
     const QString text = m_input->text().trimmed();
     if (text.isEmpty() && m_attachments.isEmpty())
+        return;
+    // 这里不拦「引擎没起来」：拦了会把用户刚打的字丢掉。启动失败由 MainWindow
+    // 在开窗时就摆提示；跑到一半崩掉由下面 processExited 的连接负责。
+    if (!m_bridge)
         return;
     if (m_welcomeVisible)
         stopWelcomeBreathing(); // M5-2: 发送首条消息后收起欢迎词
@@ -146,6 +200,7 @@ void ChatWidget::sendMessage()
 
     m_input->clear();
     m_attachments.clear();
+    m_drafts.remove(m_sessionId); // 已发出，草稿作废
     rebuildAttachChips();
     m_bridge->chat(m_sessionId, payload);
 }
@@ -168,8 +223,15 @@ void ChatWidget::addAttachment(const QString &path)
     if (path.isEmpty() || !QFileInfo::exists(path))
         return;
     const QString abs = QFileInfo(path).absoluteFilePath();
-    if (!m_attachments.contains(abs))
-        m_attachments << abs;
+    if (m_attachments.contains(abs))
+        return; // 同一个文件又拖了一次：静默忽略，不必重建整排 chip
+    if (m_attachments.size() >= kMaxAttachments) {
+        appendMessage(QStringLiteral("⚠️ 附件太多了"),
+                      QStringLiteral("一次最多带 %1 个附件，先发这一批再贴剩下的。")
+                          .arg(kMaxAttachments));
+        return;
+    }
+    m_attachments << abs;
     rebuildAttachChips();
 }
 
@@ -189,13 +251,35 @@ void ChatWidget::rebuildAttachChips()
         delete it;
     }
     for (const QString &p : m_attachments) {
-        auto *chip = new QPushButton(
-            QStringLiteral("🖼 %1  ✕").arg(QFileInfo(p).fileName()), m_attachBar);
+        const QFileInfo fi(p);
+        const bool isImage = looksLikeImage(fi);
+        auto *chip = new QPushButton(m_attachBar);
         chip->setCursor(Qt::PointingHandCursor);
         chip->setToolTip(p);
+        // 图片给 16px 缩略图：只显示文件名时，用户根本认不出自己贴的是哪张图
+        // （粘贴进来的文件名是 paste-<毫秒>.png，天然无信息量）
+        if (isImage) {
+            QImageReader reader(p);
+            reader.setAutoTransform(true);
+            const QSize orig = reader.size();
+            if (orig.isValid() && orig.width() > 0 && orig.height() > 0) {
+                // 按目标尺寸解码，不把几十 MP 的原图整张读进内存只为画一个图标
+                reader.setScaledSize(orig.scaled(16, 16, Qt::KeepAspectRatioByExpanding));
+            }
+            const QImage ico = reader.read();
+            if (!ico.isNull()) {
+                chip->setIcon(QIcon(QPixmap::fromImage(ico)));
+                chip->setIconSize(QSize(16, 16));
+            }
+        }
+        // 长文件名会把 chip 撑得横跨整行、把「✕」挤到看不见，统一按像素截断
+        const QString name = QFontMetrics(chip->font())
+                                 .elidedText(fi.fileName(), Qt::ElideMiddle, 150);
+        chip->setText(isImage ? QStringLiteral("%1  ✕").arg(name)
+                              : QStringLiteral("📎 %1  ✕").arg(name));
         chip->setStyleSheet(QStringLiteral(
             "QPushButton { background:#fff3e0; color:#b45309; border:1px solid #fcd9a5;"
-            " border-radius:12px; padding:4px 10px; font-size:12px; }"
+            " border-radius:12px; padding:4px 10px; font-size:12px; text-align:left; }"
             "QPushButton:hover { background:#ffe3bf; }"));
         const QString path = p;
         connect(chip, &QPushButton::clicked, this, [this, path]() {
@@ -205,6 +289,84 @@ void ChatWidget::rebuildAttachChips()
     }
     m_attachChips->addStretch(1);
     m_attachBar->setVisible(!m_attachments.isEmpty());
+}
+
+// ============================================================
+// M10 拖放：从文件管理器把文件拖进聊天面板 = 挂成附件
+// 用户反馈「要有读取本地文件的入口」：📎 是显式入口，拖放是顺手入口，
+// 两者共用同一份 m_attachments，走同一条发送链路。
+// ============================================================
+void ChatWidget::attachLocalFiles(const QList<QUrl> &urls)
+{
+    int added = 0;
+    for (const QUrl &u : urls) {
+        if (!u.isLocalFile())
+            continue;
+        const QString path = u.toLocalFile();
+        if (path.isEmpty() || !QFileInfo::exists(path))
+            continue;
+        addAttachment(path);
+        ++added;
+    }
+    if (added > 0)
+        m_input->setFocus(Qt::OtherFocusReason); // 挂上就等用户补一句话
+}
+
+void ChatWidget::setDropHighlight(bool on)
+{
+    if (!m_output)
+        return;
+    m_output->setStyleSheet(QString::fromLatin1(on ? kOutputStyleDrop : kOutputStyle));
+}
+
+void ChatWidget::dragEnterEvent(QDragEnterEvent *event)
+{
+    if (!event->mimeData() || !event->mimeData()->hasUrls()) {
+        event->ignore();
+        return;
+    }
+    for (const QUrl &u : event->mimeData()->urls()) {
+        if (u.isLocalFile()) {
+            setDropHighlight(true);
+            event->acceptProposedAction();
+            return;
+        }
+    }
+    event->ignore();
+}
+
+void ChatWidget::dragLeaveEvent(QDragLeaveEvent *event)
+{
+    Q_UNUSED(event);
+    setDropHighlight(false);
+}
+
+void ChatWidget::dropEvent(QDropEvent *event)
+{
+    setDropHighlight(false);
+    if (!event->mimeData() || !event->mimeData()->hasUrls()) {
+        event->ignore();
+        return;
+    }
+    // 文件夹不能当附件：引擎只会把路径拼进 prompt，读不出目录里的内容，
+    // 发出去等于给模型一个它打不开的地址。拖文件夹的自然含义是「在这个目录下干活」
+    QList<QUrl> files;
+    QString dirPath;
+    for (const QUrl &u : event->mimeData()->urls()) {
+        if (!u.isLocalFile())
+            continue;
+        if (QFileInfo(u.toLocalFile()).isDir()) {
+            if (dirPath.isEmpty())
+                dirPath = u.toLocalFile();
+            continue;
+        }
+        files << u;
+    }
+    if (!files.isEmpty())
+        attachLocalFiles(files);
+    if (!dirPath.isEmpty())
+        emit directoryDropRequested(dirPath);
+    event->acceptProposedAction();
 }
 
 bool ChatWidget::eventFilter(QObject *watched, QEvent *event)
@@ -243,6 +405,14 @@ void ChatWidget::setSession(const QString &sessionId)
 {
     if (sessionId.isEmpty() || sessionId == m_sessionId)
         return;
+    // 离开当前会话：把未发出去的字和附件存成该会话的草稿，
+    // 空草稿不占位（避免用户切来切去攒一堆空记录）
+    if (!m_sessionId.isEmpty()) {
+        if (!m_input->text().isEmpty() || !m_attachments.isEmpty())
+            m_drafts[m_sessionId] = Draft{m_input->text(), m_attachments};
+        else
+            m_drafts.remove(m_sessionId);
+    }
     // M6-4: 切换会话前若旧会话仍在流式生成，先请求取消，
     // 避免旧会话的 text 事件继续刷到新会话消息区
     if (m_streaming && m_bridge)
@@ -250,7 +420,14 @@ void ChatWidget::setSession(const QString &sessionId)
     m_sessionId = sessionId;
     m_streaming = false;
     m_firstMessageDone = false; // M8：新会话重新计首条消息（历史非空时由 renderHistory 置回 true）
-    m_attachments.clear();
+    // 恢复目标会话的草稿；附件可能已被用户在文件管理器删掉，落地前滤一遍
+    const Draft draft = m_drafts.value(sessionId);
+    m_input->setText(draft.text);
+    m_attachments = draft.files;
+    for (int i = m_attachments.size() - 1; i >= 0; --i) {
+        if (!QFileInfo::exists(m_attachments.at(i)))
+            m_attachments.removeAt(i);
+    }
     rebuildAttachChips();
     m_stopBtn->setVisible(false);
     m_output->clear();
@@ -361,6 +538,7 @@ void ChatWidget::appendStreamChunk(const QString &chunk)
 {
     if (chunk.isEmpty())
         return;
+    const bool atBottom = nearBottom();
     QTextCursor cursor(m_output->document());
     cursor.movePosition(QTextCursor::End);
     if (!m_streaming) {
@@ -373,8 +551,10 @@ void ChatWidget::appendStreamChunk(const QString &chunk)
         m_streamStartPos = cursor.position();   // M9: 正文起点，收流后在这段上做 Markdown 渲染
     }
     cursor.insertText(chunk);
-    m_output->setTextCursor(cursor);
-    m_output->ensureCursorVisible();
+    if (atBottom) {
+        m_output->setTextCursor(cursor);
+        scrollToBottom();
+    }
 }
 
 void ChatWidget::endStream()
@@ -400,14 +580,20 @@ void ChatWidget::endStream()
     raw.replace(QChar(0x2029), QLatin1Char('\n'));   // 段落分隔符还原成换行
     if (raw.trimmed().isEmpty())
         return;
+    const bool atBottom = nearBottom();
+    const int saved = m_output->verticalScrollBar()->value();
     cursor.insertHtml(MarkdownLite::toHtml(raw));
-    m_output->setTextCursor(cursor);
-    m_output->ensureCursorVisible();
+    if (atBottom) {
+        scrollToBottom();
+    } else {
+        m_output->verticalScrollBar()->setValue(saved);
+    }
 }
 
 // M3-4: 工具调用/结果卡片 —— 浅紫底 + 圆角边框 + 图标标题 + 等宽内容
 void ChatWidget::appendToolCard(const QString &icon, const QString &title, const QString &body)
 {
+    const bool atBottom = nearBottom();
     QTextCursor cursor(m_output->document());
     cursor.movePosition(QTextCursor::End);
     cursor.insertBlock();
@@ -420,8 +606,8 @@ void ChatWidget::appendToolCard(const QString &icon, const QString &title, const
                              .arg(icon, title.toHtmlEscaped(), body.toHtmlEscaped());
     cursor.insertHtml(html);
     cursor.insertBlock();
-    m_output->setTextCursor(cursor);
-    m_output->ensureCursorVisible();
+    if (atBottom)
+        scrollToBottom();
 }
 
 // M3-5: 确认门弹窗 —— 浅色紫配 QMessageBox，允许=allow_once / 拒绝=deny
@@ -470,11 +656,57 @@ void ChatWidget::respondConfirm(const QString &id, const QString &decision)
     m_bridge->confirmResult(m_sessionId, id, decision);
 }
 
+bool ChatWidget::nearBottom() const
+{
+    const QScrollBar *bar = m_output->verticalScrollBar();
+    // 48px 容差：贴着底部一点点也算「在看最新内容」
+    return bar->value() >= bar->maximum() - 48;
+}
+
+void ChatWidget::scrollToBottom()
+{
+    QScrollBar *bar = m_output->verticalScrollBar();
+    bar->setValue(bar->maximum());
+}
+
+void ChatWidget::showEngineNotice(const QString &text)
+{
+    appendMessage(QStringLiteral("⚠️ 引擎"), text);
+}
+
 void ChatWidget::appendMessage(const QString &who, const QString &text)
 {
-    const QString html = QStringLiteral(R"(<p><b style="color:#f97316;">%1</b>：%2</p>)")
-                             .arg(who.toHtmlEscaped(), text.toHtmlEscaped());
+    const bool atBottom = nearBottom();
+    const int saved = m_output->verticalScrollBar()->value();
+    QString body = text.toHtmlEscaped();
+    body.replace(QStringLiteral("\n"), QStringLiteral("<br/>"));
+
+    // 右侧气泡 = 用户说的话；左侧 = Flare 的回答；居中弱化 = 系统提示。
+    // 长对话里必须一眼扫出「哪句是我说的」，所以用户的发言右对齐 + 浅琥珀底。
+    // 前缀「你：」保留在气泡里，纯文本导出（outputText / 日志 / e2e 断言）仍然可读。
+    QString html;
+    if (who == QStringLiteral("你")) {
+        html = QStringLiteral(
+                   "<table width=\"100%\" cellspacing=\"0\" cellpadding=\"7\" border=\"0\">"
+                   "<tr><td width=\"18%\"></td>"
+                   "<td bgcolor=\"#fff3d6\">"
+                   "<span style=\"color:#b45309;font-weight:600;\">你：</span>"
+                   "<span style=\"color:#4a2e0d;\">%1</span>"
+                   "</td></tr></table>")
+                   .arg(body);
+    } else if (who == QStringLiteral("Flare")) {
+        html = QStringLiteral(R"(<p><b style="color:#f97316;">Flare</b>：%1</p>)").arg(body);
+    } else {
+        html = QStringLiteral(
+                   "<p align=\"center\"><span style=\"color:#8a6a3b;\">%1 %2</span></p>")
+                   .arg(who.toHtmlEscaped(), body);
+    }
+
     m_output->append(html);
+    if (atBottom)
+        scrollToBottom();
+    else
+        m_output->verticalScrollBar()->setValue(saved);
 }
 
 // ============================================================

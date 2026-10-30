@@ -2,6 +2,17 @@
 #include <QApplication>
 #include <QProcessEnvironment>
 #include <QSignalSpy>
+#include <QMimeData>
+#include <QDropEvent>
+#include <QDragEnterEvent>
+#include <QTemporaryDir>
+#include <QDir>
+#include <QFileInfo>
+#include <QScrollBar>
+#include <QImage>
+#include <QApplication>
+#include <QClipboard>
+#include <QMimeData>
 #include <QTimer>
 #include <QJsonObject>
 #include "../src/chatwidget.h"
@@ -44,12 +55,204 @@ private slots:
     // M9 打磨
     void markdownRenderedAfterStream();
     void markdownUnclosedCodeBlockStillShows();
+    // M10 打磨：拖放附件 + 引擎故障可见性
+    void dropAttachesLocalFile();
+    void dropIgnoresRemoteUrlAndMissingFile();
+    void engineCrashShowsNotice();
+    void engineCleanExitStaysQuiet();
+    void dropDirectoryRequestsWorkdir();
+    void dropMixedFileAndDirectory();
+    void pasteImageBecomesAttachment();
+    void draftIsolatedPerSession();
+    void scrollFollowsOnlyAtBottom();
 };
 
 // 构造一个 text 事件
 static QJsonObject textEvent(const QString &content)
 {
     return QJsonObject{{"type", "text"}, {"content", content}};
+}
+
+// M10：拖放落地的入口就是 attachLocalFiles，直接调它等价于「松手」
+void ChatWidgetTest::dropAttachesLocalFile()
+{
+    EngineBridge bridge;
+    ChatWidget w(&bridge);
+    QVERIFY(w.attachments().isEmpty());
+
+    // 拿测试自己的二进制当被拖进来的文件，省得造临时文件
+    const QUrl url = QUrl::fromLocalFile(QCoreApplication::applicationFilePath());
+    w.attachLocalFiles(QList<QUrl>{url});
+
+    QCOMPARE(w.attachments().size(), 1);
+    QCOMPARE(w.attachments().first(), QCoreApplication::applicationFilePath());
+}
+
+// 拖网页链接 / 拖已删掉的文件都不该挂成附件（否则发送时才炸）
+void ChatWidgetTest::dropIgnoresRemoteUrlAndMissingFile()
+{
+    EngineBridge bridge;
+    ChatWidget w(&bridge);
+
+    w.attachLocalFiles(QList<QUrl>{QUrl(QStringLiteral("https://example.com/a.png")),
+                                   QUrl::fromLocalFile(QStringLiteral("/nonexistent/flare-drop-test.bin"))});
+
+    QVERIFY2(w.attachments().isEmpty(), "非本地文件与不存在的路径都不应进入附件列表");
+}
+
+// 文件夹拖进窗口 → 不能当附件（引擎读不出目录内容），要请宿主切工作目录
+void ChatWidgetTest::dropDirectoryRequestsWorkdir()
+{
+    EngineBridge bridge;
+    ChatWidget w(&bridge);
+    QTemporaryDir tmp;
+    QVERIFY(tmp.isValid());
+
+    QMimeData md;
+    md.setUrls({QUrl::fromLocalFile(tmp.path())});
+    QDragEnterEvent enter(QPoint(10, 10), Qt::CopyAction, &md, Qt::LeftButton,
+                          Qt::NoModifier);
+    QDropEvent ev(QPointF(10, 10), Qt::CopyAction, &md, Qt::LeftButton, Qt::NoModifier);
+
+    QSignalSpy spy(&w, &ChatWidget::directoryDropRequested);
+    QCoreApplication::sendEvent(&w, &enter);
+    QCoreApplication::sendEvent(&w, &ev);
+
+    QCOMPARE(spy.count(), 1);
+    QCOMPARE(spy.at(0).at(0).toString(), tmp.path());
+    QCOMPARE(w.attachments().size(), 0); // 目录绝不能混进附件
+}
+
+// 文件和文件夹一起拖：文件照常挂附件，文件夹单独抛给宿主
+void ChatWidgetTest::dropMixedFileAndDirectory()
+{
+    EngineBridge bridge;
+    ChatWidget w(&bridge);
+    QTemporaryDir tmp;
+    QVERIFY(tmp.isValid());
+
+    QMimeData md;
+    md.setUrls({QUrl::fromLocalFile(QCoreApplication::applicationFilePath()),
+                QUrl::fromLocalFile(tmp.path())});
+    QDragEnterEvent enter(QPoint(10, 10), Qt::CopyAction, &md, Qt::LeftButton,
+                          Qt::NoModifier);
+    QDropEvent ev(QPointF(10, 10), Qt::CopyAction, &md, Qt::LeftButton, Qt::NoModifier);
+
+    QSignalSpy spy(&w, &ChatWidget::directoryDropRequested);
+    QCoreApplication::sendEvent(&w, &enter);
+    QCoreApplication::sendEvent(&w, &ev);
+
+    QCOMPARE(w.attachments().size(), 1);
+    QCOMPARE(spy.count(), 1);
+}
+
+// 截图/网页图片复制后按 Ctrl+V：必须挂成附件，不能被 QLineEdit 当文本吞掉
+void ChatWidgetTest::pasteImageBecomesAttachment()
+{
+    EngineBridge bridge;
+    ChatWidget w(&bridge);
+
+    QImage img(4, 4, QImage::Format_RGB32);
+    img.fill(Qt::red);
+    QApplication::clipboard()->setImage(img);
+    const QMimeData *md = QApplication::clipboard()->mimeData();
+    if (!md || !md->hasImage())
+        QSKIP("当前平台剪贴板不支持图片，跳过");
+
+    QLineEdit *in = w.findChild<QLineEdit *>(QStringLiteral("chatInput"));
+    QVERIFY(in);
+    const int before = w.attachments().size();
+    QTest::keySequence(in, QKeySequence::Paste);
+
+    QCOMPARE(w.attachments().size(), before + 1);
+    const QString path = w.attachments().last();
+    QVERIFY2(QFileInfo::exists(path), qPrintable(path));
+    QVERIFY(path.endsWith(QStringLiteral(".png")));
+}
+
+// 每个会话各自留存草稿：切走再切回来字和附件都还在，也不会串到别的会话被误发
+void ChatWidgetTest::draftIsolatedPerSession()
+{
+    EngineBridge bridge;
+    ChatWidget w(&bridge);
+    QLineEdit *in = w.findChild<QLineEdit *>(QStringLiteral("chatInput"));
+    QVERIFY(in);
+
+    w.setSession(QStringLiteral("sess-a"));
+    in->setText(QStringLiteral("A 写到一半的想法"));
+    w.attachLocalFiles({QUrl::fromLocalFile(QCoreApplication::applicationFilePath())});
+    QCOMPARE(w.attachments().size(), 1);
+
+    w.setSession(QStringLiteral("sess-b"));
+    QVERIFY2(in->text().isEmpty(), "换了会话，上一会话没发出去的字不能跟过来");
+    QVERIFY(w.attachments().isEmpty());
+    in->setText(QStringLiteral("B 的内容"));
+
+    w.setSession(QStringLiteral("sess-a"));
+    QCOMPARE(in->text(), QStringLiteral("A 写到一半的想法"));
+    QCOMPARE(w.attachments().size(), 1);
+
+    w.setSession(QStringLiteral("sess-b"));
+    QCOMPARE(in->text(), QStringLiteral("B 的内容"));
+}
+
+// 用户往上翻读旧消息时不能被新内容拽回底部；本来就贴着底部才自动跟随
+void ChatWidgetTest::scrollFollowsOnlyAtBottom()
+{
+    EngineBridge bridge;
+    ChatWidget w(&bridge);
+    w.resize(640, 360);
+    w.show();
+    QTextEdit *out = w.findChild<QTextEdit *>(QStringLiteral("chatOutput"));
+    QVERIFY(out);
+
+    QString bulk;
+    for (int i = 0; i < 80; ++i)
+        bulk += QStringLiteral("填充行 %1 —— 用来把滚动条撑出来\n").arg(i);
+    w.onEngineEvent(textEvent(bulk));
+    QTest::qWait(50);
+    QScrollBar *bar = out->verticalScrollBar();
+    if (bar->maximum() <= 0)
+        QSKIP("离屏平台未产生滚动范围，跳过");
+
+    QCOMPARE(bar->value(), bar->maximum());   // 追加消息后应停在底部
+
+    bar->setValue(0);                          // 用户手动翻到最上面
+    QTest::qWait(20);
+    w.onEngineEvent(textEvent(QStringLiteral("流式期间又来了一段")));
+    QTest::qWait(20);
+    QCOMPARE(bar->value(), 0);                 // 没有被拽回底部
+
+    bar->setValue(bar->maximum());             // 用户自己滚回底部
+    QTest::qWait(20);
+    w.onEngineEvent(textEvent(QStringLiteral("回到最新")));
+    QTest::qWait(20);
+    QCOMPARE(bar->value(), bar->maximum());    // 重新开始跟随
+}
+
+// 引擎跑到一半崩掉，必须在对话区说出来
+void ChatWidgetTest::engineCrashShowsNotice()
+{
+    EngineBridge bridge;
+    ChatWidget w(&bridge);
+
+    emit bridge.processExited(2);
+
+    QVERIFY2(w.outputText().contains(QStringLiteral("引擎异常退出")),
+             "引擎非 0 退出码必须在对话区可见，否则用户只看到『发出去了没人回』");
+    QVERIFY(w.outputText().contains(QStringLiteral("2")));
+}
+
+// 我们主动 stop() 时退出码 0，不该往对话区塞噪音
+void ChatWidgetTest::engineCleanExitStaysQuiet()
+{
+    EngineBridge bridge;
+    ChatWidget w(&bridge);
+
+    emit bridge.processExited(0);
+
+    QVERIFY2(!w.outputText().contains(QStringLiteral("引擎异常退出")),
+             "正常停止不应该报警");
 }
 
 void ChatWidgetTest::widgetHasInputAndOutput()

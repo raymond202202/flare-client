@@ -74,9 +74,18 @@ bool EngineBridge::start(const QStringList &args)
 #endif
     const QString bundledEngine =
         QCoreApplication::applicationDirPath() + QLatin1Char('/') + engineName;
-    m_process->start(QFileInfo::exists(bundledEngine) ? bundledEngine
-                                                      : QStringLiteral("flare"),
-                     args);
+    // 0) FLARE_ENGINE_BIN —— 显式指定引擎二进制。
+    //    给自动化测试用（e2e 在 build 目录跑，同目录没有引擎、PATH 里也没有），
+    //    也给高级用户装了自己编译的引擎时用。优先级最高，因为显式配置就该赢。
+    const QString explicitEngine = QString::fromLocal8Bit(qgetenv("FLARE_ENGINE_BIN"));
+    QString program;
+    if (!explicitEngine.isEmpty() && QFileInfo(explicitEngine).isExecutable())
+        program = explicitEngine;
+    else if (QFileInfo::exists(bundledEngine))
+        program = bundledEngine;
+    else
+        program = QStringLiteral("flare");
+    m_process->start(program, args);
     return m_process->waitForStarted(3000);
 }
 

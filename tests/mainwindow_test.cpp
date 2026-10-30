@@ -3,6 +3,8 @@
 #include <QPalette>
 #include <QJsonObject>
 #include <QSignalSpy>
+#include <QPushButton>
+#include <QStatusBar>
 #include "../src/mainwindow.h"
 #include "engine_bridge.h"
 
@@ -19,7 +21,26 @@ private slots:
     void themeIsLightPurple();
     void modelsEventShowsModelInfo();
     void modelsEventIgnoresSensitiveFields();
+    void engineStatusButtonOffersRestart();
 };
+
+// 引擎断了必须能原地重启：状态栏常驻入口，断开态的文案要写清「点击重启」，
+// 否则用户看到「已断开」只会去重开客户端，正在读的对话就没了。
+void MainWindowTest::engineStatusButtonOffersRestart()
+{
+    MainWindow w;
+    auto *btn = w.findChild<QPushButton *>(QStringLiteral("engineStatusButton"));
+    QVERIFY2(btn, "状态栏必须有引擎状态入口（objectName=engineStatusButton）");
+    QVERIFY2(!btn->text().isEmpty(), "引擎状态不能为空字符串");
+    if (btn->text().contains(QStringLiteral("断开"))) {
+        QVERIFY2(btn->text().contains(QStringLiteral("重启")),
+                 qPrintable(QStringLiteral("断开态必须提示怎么恢复，实际：") + btn->text()));
+        QVERIFY(btn->cursor().shape() == Qt::PointingHandCursor);
+        QVERIFY2(!btn->toolTip().isEmpty(), "断开态要有 tooltip 说明点了会发生什么");
+    } else {
+        QVERIFY2(btn->text().contains(QStringLiteral("已连接")), qPrintable(btn->text()));
+    }
+}
 
 void MainWindowTest::windowCreates()
 {
