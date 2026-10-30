@@ -6,6 +6,8 @@
 #include <QJsonArray>
 #include <QListWidget>
 #include <QDateTime>
+#include <QSettings>
+#include <QStandardPaths>
 #include "../src/sessionlistwidget.h"
 #include "engine_bridge.h"
 
@@ -35,6 +37,7 @@ class SessionListWidgetTest : public QObject
     Q_OBJECT
 
 private slots:
+    void initTestCase();
     void widgetHasListAndButtons();
     void sessionsEventPopulatesList();
     void clickEmitsSessionSelected();
@@ -49,6 +52,8 @@ private slots:
     void shortStampKeepsYearAcrossYears();
     void keyboardNavSwitchesSessionAndSkipsHeaders();
     void searchBoxArrowDownJumpsToList();
+    // M14-2
+    void pinnedSessionSticksToTopAndSurvivesRestart();
 };
 
 static bool flareAvailable()
@@ -365,6 +370,68 @@ void SessionListWidgetTest::searchBoxArrowDownJumpsToList()
     QCOMPARE(w.currentSessionId(), QString("r-1"));
     QCOMPARE(spy.count(), 1);
     QCOMPARE(spy.at(0).at(0).toString(), QString("r-1"));
+}
+
+void SessionListWidgetTest::initTestCase()
+{
+    // 置顶记录写 QSettings。测试必须关进 Qt 的测试沙箱（~/.qttest/config），
+    // 否则跑一次单测就把用户真实 ~/.config/flare/flare-client.ini 的置顶清空。
+    QStandardPaths::setTestModeEnabled(true);
+    QSettings(QSettings::IniFormat, QSettings::UserScope,
+              QStringLiteral("flare"), QStringLiteral("flare-client")).clear();
+}
+
+// M14-2: 置顶是会话一多以后唯一的抓手。排序全靠 applySessions 里「置顶项单独先插」
+// 这一条，谁把插入顺序改掉，置顶就悄悄失效而且没人发现 —— 把它钉成契约。
+void SessionListWidgetTest::pinnedSessionSticksToTopAndSurvivesRestart()
+{
+    const QDateTime now = QDateTime::currentDateTime();
+    const auto iso = [](const QDateTime &dt) { return dt.toString(Qt::ISODateWithMs); };
+    QJsonArray arr;
+    arr.append(QJsonObject{{"id", "p-new"}, {"title", "今天聊的"}, {"updatedAt", iso(now)}});
+    arr.append(QJsonObject{{"id", "p-mid"}, {"title", "三天前聊的"}, {"updatedAt", iso(now.addDays(-3))}});
+    arr.append(QJsonObject{{"id", "p-old"}, {"title", "上个月聊的"}, {"updatedAt", iso(now.addDays(-40))}});
+    const auto feed = [&arr](SessionListWidget &w) {
+        w.onEngineEvent(QJsonObject{{"type", "sessions"}, {"sessions", arr}});
+    };
+
+    {
+        EngineBridge bridge;
+        SessionListWidget w(&bridge);
+        feed(w);
+        QCOMPARE(w.count(), 3);
+        QCOMPARE(w.sessionItem(0)->data(Qt::UserRole).toString(), QString("p-new"));
+
+        // 置顶最老的那条
+        w.list()->setCurrentItem(w.sessionItem(2));
+        w.pinCurrent();
+        feed(w); // refresh 是异步的，这里手动重放一次引擎回包
+
+        QCOMPARE(w.count(), 3); // 置顶不能把这条复制成两份
+        QCOMPARE(w.sessionItem(0)->data(Qt::UserRole).toString(), QString("p-old"));
+        QVERIFY2(w.sessionItem(0)->text().startsWith(QString("\U0001F4CC")),
+                 "置顶项没有 📌 前缀，用户看不出它凭什么排在最上面");
+        // 置顶自成一组，标题行必须排在这条前面
+        QVERIFY(w.list()->item(0)->data(Qt::UserRole).toString().isEmpty());
+        QVERIFY(w.list()->item(0)->text().contains(QStringLiteral("置顶")));
+    }
+
+    // 重开一个 widget = 模拟重启客户端，置顶必须还在（说明真落盘了，不是内存态）
+    {
+        EngineBridge bridge2;
+        SessionListWidget w2(&bridge2);
+        feed(w2);
+        QCOMPARE(w2.sessionItem(0)->data(Qt::UserRole).toString(), QString("p-old"));
+
+        // 取消置顶 → 回到时间序
+        w2.list()->setCurrentItem(w2.sessionItem(0));
+        w2.pinCurrent();
+        feed(w2);
+        QCOMPARE(w2.sessionItem(0)->data(Qt::UserRole).toString(), QString("p-new"));
+        const QStringList heads = sectionHeaders(w2.list());
+        for (const QString &h : heads)
+            QVERIFY2(!h.contains(QStringLiteral("置顶")), "取消置顶后还留着「置顶」标题行");
+    }
 }
 
 QTEST_MAIN(SessionListWidgetTest)
