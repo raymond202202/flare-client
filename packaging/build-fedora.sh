@@ -18,6 +18,9 @@ echo "==> 构建"
 cmake --build build-fedora -j"$(nproc)"
 
 echo "==> 运行测试 (TDD)"
+# 无图形环境（CI、SSH、后台打包）也要能跑：显式用 offscreen 平台，
+# 否则 Qt 拿不到 DISPLAY 会 Subprocess aborted，看起来像测试全红。
+export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-offscreen}"
 ctest --test-dir build-fedora --output-on-failure
 
 # 打包（可选：-p 参数触发 CPack RPM 打包）

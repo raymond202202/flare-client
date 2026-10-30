@@ -1,14 +1,15 @@
 # ============================================================
-# Windows 打包 CI — flare-client（GitHub Actions）
+# Windows 打包 CI — flare-client（Qt 壳，GitHub Actions）
 #
 # 【背景】fedora 开发机无 mingw/wine 交叉工具链（且无 sudo 装包），
-# 因此 Windows 端采用「Windows runner + Qt MSVC 套件」CI 方案：
+# 因此 Windows 端走「Windows runner + Qt MSVC 套件」：
 #   - windows-latest runner 自带 MSVC 2022
-#   - aqtinstall 安装 Qt 6 (MSVC 2022 64-bit)，无需手动下载
-#   - windeployqt 收集 Qt 运行库 → CPack 产出 zip（免安装绿色版）
-#   - 上传 artifact 供下载验收
+#   - jurplel/install-qt-action 装 Qt 6.7.3 (MSVC 2022 64-bit)，带缓存
+#     （2026-10 起 aqtinstall 直连官方源解析 6.7.3 包信息会失败，改用该 action）
+#   - 引擎由 Go 交叉编译产出 flare.exe 塞进包内 → 用户不需要装 Node/引擎
+#   - windeployqt 收集 Qt 运行库 → 绿色版 zip（解压双击即可运行）
 #
-# 【触发】push 到 master 或手动 workflow_dispatch
+# 【触发】push 到 master（限定相关路径）或手动 workflow_dispatch
 # ============================================================
 name: windows-build
 
@@ -22,28 +23,63 @@ on:
       - "engine-bridge/**"
       - "tests/**"
       - "packaging/**"
+      - ".github/workflows/windows-build.yml"
+
+env:
+  FLARE_REPO: raymond202202/flare
 
 jobs:
   build-windows:
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
-      - name: Checkout
+      - name: Checkout（GUI 壳）
         uses: actions/checkout@v4
 
-      - name: Install Qt 6 (MSVC 2022 64-bit) via aqtinstall
+      - name: Checkout（Go 引擎主线）
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.FLARE_REPO }}
+          path: engine-src
+
+      - name: Install Qt 6.7.3 (MSVC 2022 64-bit)
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.7.3"
+          arch: win64_msvc2022_64
+          cache: true
+
+      - name: 安装 Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: engine-src/go.mod
+          cache-dependency-path: engine-src/go.sum
+
+      - name: 解析版本号
         shell: bash
         run: |
-          python -m pip install --quiet aqtinstall
-          python -m aqt install-qt windows desktop 6.7.3 win64_msvc2022_64 \
-            -O "${{ runner.temp }}/qt"
-          echo "QT_PREFIX=${{ runner.temp }}/qt/6.7.3/msvc2022_64" >> "$GITHUB_ENV"
+          if [ -f VERSION ]; then
+            V="$(tr -d ' \r\n' < VERSION)"
+          else
+            V="$(grep -oE 'VERSION [0-9]+\.[0-9]+\.[0-9]+' CMakeLists.txt | head -1 | awk '{print $2}')"
+          fi
+          echo "VERSION=$V" >> "$GITHUB_ENV"
+          echo "构建版本：$V"
+
+      - name: 编译内置引擎（windows/amd64，静态、无 CGO）
+        shell: bash
+        working-directory: engine-src
+        run: |
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 \
+            go build -trimpath -ldflags "-s -w -X main.Version=${VERSION}" \
+            -o ../engine-windows/flare.exe ./cmd/flare
+          ls -lh ../engine-windows/flare.exe
 
       - name: Configure CMake
         shell: bash
         run: |
           cmake -B build-windows -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_PREFIX_PATH="$QT_PREFIX"
+            -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR"
 
       - name: Build
         shell: bash
@@ -51,27 +87,47 @@ jobs:
 
       - name: Run tests (ctest)
         shell: bash
+        env:
+          QT_QPA_PLATFORM: offscreen
         run: ctest --test-dir build-windows -C Release --output-on-failure
 
       - name: Deploy Qt runtime (windeployqt)
         shell: bash
         run: |
-          "$QT_PREFIX/bin/windeployqt.exe" --release --no-translations \
-            build-windows/Release/flare-client.exe
+          "$QT_ROOT_DIR/bin/windeployqt.exe" --release --no-translations \
+            --no-opengl-sw build-windows/Release/flare-client.exe
 
-      - name: Package (CPack ZIP)
-        shell: bash
-        run: cmake --build build-windows --config Release --target package
-
-      - name: Collect artifact
+      - name: 组装绿色包（GUI + Qt 运行库 + 内置引擎）
         shell: bash
         run: |
-          mkdir -p packaging/dist
-          cp build-windows/flare-client_*.zip packaging/dist/
+          OUT="packaging/dist/flare-client-${VERSION}-win-x64"
+          mkdir -p "$OUT"
+          cp -r build-windows/Release/* "$OUT"/
+          cp engine-windows/flare.exe "$OUT"/
+          printf '%s\n' \
+            "Flare 对话（Windows x64 绿色版）" \
+            "================================" \
+            "" \
+            "1. 双击 flare-client.exe 运行。不需要装 Node.js，也不需要单独装引擎。" \
+            "2. 首次运行请先在「设置」里填入 API Key（DeepSeek 平台申请），" \
+            "   保存后左下角状态栏会显示已接入的模型。" \
+            "3. 配置在 %USERPROFILE%\\.flare\\.env，会话库在 %USERPROFILE%\\.flare\\flare.db。" \
+            "4. 卸载：删掉本文件夹即可（配置在 %USERPROFILE%\\.flare，可一并删除）。" \
+            "" \
+            "关闭窗口默认收进托盘，从托盘图标退出才是真的退出。" \
+            > "$OUT/使用说明.txt"
+          ls -lh "$OUT" | head -20
+
+      - name: 打包 zip
+        shell: bash
+        run: |
+          cd packaging/dist
+          powershell -Command "Compress-Archive -Path ('flare-client-' + $env:VERSION + '-win-x64') -DestinationPath ('flare-client-' + $env:VERSION + '-win-x64.zip') -Force"
+          ls -lh ./*.zip
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: flare-client-windows
-          path: packaging/dist/flare-client_*.zip
+          name: flare-client-windows-qt
+          path: packaging/dist/flare-client-*-win-x64.zip
           if-no-files-found: error
