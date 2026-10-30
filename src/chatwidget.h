@@ -56,10 +56,6 @@ public:
     };
 
 signals:
-    // M8 用户反馈「会话名看不出这个会话是干什么的」：
-    // 首条消息发出后把内容片段抛给会话列表，列表用它作为该会话的本地别名。
-    // （引擎侧自动标题要改数据层，先用宿主别名让名字立刻有意义）
-    void firstMessageSent(const QString &sessionId, const QString &text);
 
     // 把文件夹拖进窗口 ≠ 想把它当附件发出去（引擎读不出目录内容），
     // 更自然的含义是「在这个目录下干活」→ 抛给 MainWindow 切工作目录
@@ -159,7 +155,6 @@ private:
     QHBoxLayout *m_attachChips = nullptr;
     QStringList m_attachments;       // 待发送附件的绝对路径
     QPushButton *m_jumpBtn = nullptr; // 「↓ 新内容」浮标（挂在 m_output 上绝对定位）
-    bool m_firstMessageDone = false; // 本会话是否已发过消息（别名只取首条）
 };
 
 #endif // CHATWIDGET_H

@@ -72,6 +72,7 @@ private slots:
     void streamedReplyGetsCopyButton();
     // M15-4：翻回去看的历史回复也要是排版好的，不是原始 markdown 文本
     void historyReplyIsRendered();
+    void historyKeepsMediaKinds();
     // M15-5：回答以代码块开头时，首行不能被「Flare：」标签吃掉
     void replyStartingWithCodeBlockKeepsFirstLine();
 };
@@ -757,3 +758,33 @@ void ChatWidgetTest::replyStartingWithCodeBlockKeepsFirstLine()
 
 QTEST_MAIN(ChatWidgetTest)
 #include "chatwidget_test.moc"
+
+// ③ 错层收尾：引擎只下发事实（content + contentKinds），「[图片]」这个词必须由宿主补。
+// 这条曾经的样子是：正文直接是 {"type":"multimodal",...} 一坨乱码；
+// 更糟的是纯图片消息 content 为空，被当成「空消息」直接丢掉，用户以为消息没发出去。
+void ChatWidgetTest::historyKeepsMediaKinds()
+{
+    EngineBridge bridge;
+    ChatWidget w(&bridge);
+    w.resize(760, 560);
+    w.show();
+
+    const QJsonArray messages{
+        QJsonObject{{"role", "user"},
+                    {"content", "看看这张图 里面是什么内容"},
+                    {"contentKinds", QJsonArray{"image"}}},
+        QJsonObject{{"role", "user"}, {"content", ""}, {"contentKinds", QJsonArray{"image", "file"}}},
+        QJsonObject{{"role", "user"}, {"content", "普通一句话"}},
+    };
+    w.renderHistory(messages);
+    QCoreApplication::processEvents();
+
+    const QString out = w.outputText();
+    QVERIFY2(!out.contains(QStringLiteral("multimodal")), qPrintable(out));
+    QVERIFY2(out.contains(QStringLiteral("[图片] 看看这张图 里面是什么内容")), qPrintable(out));
+    // 纯图片/纯附件的消息不能因为正文为空就被吞掉
+    QVERIFY2(out.contains(QStringLiteral("[图片] [附件]")), qPrintable(out));
+    QVERIFY2(out.contains(QStringLiteral("普通一句话")), qPrintable(out));
+    // 普通消息不该被硬塞标签
+    QVERIFY2(!out.contains(QStringLiteral("[图片] 普通一句话")), qPrintable(out));
+}

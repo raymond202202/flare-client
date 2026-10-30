@@ -36,7 +36,8 @@ private slots:
     void sessionListUsesPreviewAsSecondLine();
     void deleteButtonSoftDeletesToRecycleBin();
     void archiveViewRestoresInsteadOfDeleting();
-    void localAliasSurvivesRefresh();
+    void placeholderTitleFallsBackToEnginePreview();
+    void previewKindsRenderAsLocalCopy();
     void bridgeWorkingDirectoryApplied();
     void pasteImageBecomesAttachment();
     void attachBarVisibleOnlyWithAttachments();
@@ -131,33 +132,57 @@ void M8FeedbackTest::archiveViewRestoresInsteadOfDeleting()
              qPrintable(w.sessionItem(0)->text()));
 }
 
-// 1) 本地别名（首条消息）刷新后仍在，且优先于 preview
-void M8FeedbackTest::localAliasSurvivesRefresh()
+// 修错层③：引擎只给事实（preview + previewKinds），界面上的「[图片]/[附件]」由宿主拼
+void M8FeedbackTest::previewKindsRenderAsLocalCopy()
 {
     EngineBridge bridge;
     SessionListWidget w(&bridge);
 
     QJsonArray arr;
-    arr.append(QJsonObject{{"id", "s-alias"}, {"title", "新会话"}, {"preview", "旧预览"}});
+    arr.append(QJsonObject{{"id", "s-img"}, {"title", "新会话"},
+                           {"preview", "看看这张图"},
+                           {"previewKinds", QJsonArray{QStringLiteral("image")}}});
+    arr.append(QJsonObject{{"id", "s-only"}, {"title", "新会话"},
+                           {"preview", ""},
+                           {"previewKinds", QJsonArray{QStringLiteral("image"),
+                                                       QStringLiteral("file")}}});
     w.onEngineEvent(QJsonObject{{"type", "sessions"}, {"sessions", arr}});
 
-    w.setLocalAlias(QStringLiteral("s-alias"), QStringLiteral("季度复盘会议纪要整理"));
+    const QString withText = w.sessionItem(0)->text();
+    QVERIFY2(withText.contains(QStringLiteral("[图片]"))
+                 && withText.contains(QStringLiteral("看看这张图")),
+             qPrintable(withText));
+
+    const QString onlyMedia = w.sessionItem(1)->text();
+    QVERIFY2(onlyMedia.startsWith(QStringLiteral("[图片] [附件]")), qPrintable(onlyMedia));
+}
+
+// 1) 修错层②：会话名的唯一来源是引擎 —— 占位标题时用引擎 preview 当主标题，
+//    宿主不再往本地 ini 里存第二份「别名」（换机会丢、且和引擎 preview 打架）
+void M8FeedbackTest::placeholderTitleFallsBackToEnginePreview()
+{
+    EngineBridge bridge;
+    SessionListWidget w(&bridge);
+
+    QJsonArray arr;
+    arr.append(QJsonObject{{"id", "s-prev"}, {"title", "新会话"},
+                           {"preview", "季度复盘会议纪要整理"}});
+    w.onEngineEvent(QJsonObject{{"type", "sessions"}, {"sessions", arr}});
 
     const QString t0 = w.sessionItem(0)->text();
     QVERIFY2(t0.startsWith(QStringLiteral("季度复盘")), qPrintable(t0));
 
-    // 再灌一次同样数据（模拟 refresh），别名仍在
+    // 重新灌一次（模拟 refresh）名字仍来自引擎 preview
     w.onEngineEvent(QJsonObject{{"type", "sessions"}, {"sessions", arr}});
     const QString t1 = w.sessionItem(0)->text();
     QVERIFY2(t1.startsWith(QStringLiteral("季度复盘")), qPrintable(t1));
 
-    // 清理测试写入的别名，避免污染真实 ini
+    // 宿主侧不该再给这个会话留内容副本
     QSettings s(QSettings::IniFormat, QSettings::UserScope,
                 QStringLiteral("flare"), QStringLiteral("flare-client"));
-    QVariantMap m = s.value(QStringLiteral("sessions/aliases")).toMap();
-    m.remove(QStringLiteral("s-alias"));
-    s.setValue(QStringLiteral("sessions/aliases"), m);
-    s.sync();
+    const QVariantMap aliases = s.value(QStringLiteral("sessions/aliases")).toMap();
+    QVERIFY2(!aliases.contains(QStringLiteral("s-prev")),
+             "宿主不再持久化会话别名（名字只能来自引擎）");
 }
 
 // 3) 工作目录：设置后 getter 生效，非法目录被拒
@@ -266,19 +291,33 @@ void M8FeedbackTest::attachBarVisibleOnlyWithAttachments()
 // 首次使用最常见的一步：没有 API Key。状态栏要能提醒，且不能把空模板当成已配置。
 void M8FeedbackTest::apiKeyDetection()
 {
-    // 空文件 / 只有注释 / 只有空值 —— 都算没配置
-    QVERIFY(!MainWindow::envHasApiKey(QString()));
-    QVERIFY(!MainWindow::envHasApiKey(QStringLiteral("# DEEPSEEK_API_KEY=\n")));
-    QVERIFY(!MainWindow::envHasApiKey(QStringLiteral("DEEPSEEK_API_KEY=\n")));
-    QVERIFY(!MainWindow::envHasApiKey(QStringLiteral("DEEPSEEK_API_KEY=\"\"\n")));
-    QVERIFY(!MainWindow::envHasApiKey(QStringLiteral("DEFAULT_MODEL=deepseek-chat\n")));
+    // 修错层①：key 状态只认引擎上报的 hasApiKey。宿主不再自己解析 ~/.flare/.env，
+    // 否则就是第二份实现 —— 之前宿主把任何 *API_KEY 都算配好，引擎只认当前
+    // provider 对应的那个变量，两边对同一个 .env 会给出相反结论。
+    MainWindow w;
+    QCOMPARE(w.engineHasApiKey(), -1);   // 引擎还没答，宿主不猜
 
-    // 有值 —— 引号/无引号/前后空行都认
-    QVERIFY(MainWindow::envHasApiKey(QStringLiteral("DEEPSEEK_API_KEY=sk-abc123\n")));
-    QVERIFY(MainWindow::envHasApiKey(QStringLiteral("\n  export LLM_API_KEY = \"sk-abc\"  \n")));
-    QVERIFY(MainWindow::envHasApiKey(QStringLiteral("OPENAI_API_KEY=sk-x\nDEFAULT_MODEL=deepseek-chat")));
-    // 注释掉的那行不算（用户常在 .env 里临时注释掉 key）
-    QVERIFY(!MainWindow::envHasApiKey(QStringLiteral("#DEEPSEEK_API_KEY=sk-abc\n")));
+    const auto modelsFrame = [](bool hasKey) {
+        return QJsonObject{
+            {"type", "models"},
+            {"configured", QJsonObject{
+                {"main", QJsonObject{
+                    {"model", "deepseek-chat"},
+                    {"provider", "deepseek"},
+                    {"hasApiKey", hasKey}}}}}};
+    };
+
+    w.onEngineEvent(modelsFrame(false));
+    QCOMPARE(w.engineHasApiKey(), 0);
+    QVERIFY2(w.findChild<QPushButton *>(QStringLiteral("keyHintButton")) != nullptr,
+             "没 key 时状态栏要有常驻可点提示");
+
+    w.onEngineEvent(modelsFrame(true));
+    QCOMPARE(w.engineHasApiKey(), 1);
+    // 只跑延迟删除，不放过引擎的异步事件（避免测试依赖真机 .env）
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    QVERIFY2(w.findChild<QPushButton *>(QStringLiteral("keyHintButton")) == nullptr,
+             "引擎说 key 已配好 → 提示必须自己撤掉");
 }
 
 

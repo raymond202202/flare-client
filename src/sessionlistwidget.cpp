@@ -1,5 +1,6 @@
 #include "sessionlistwidget.h"
 #include "flaretime.h"
+#include "mediatags.h"
 
 #include <QLabel>
 #include <QHBoxLayout>
@@ -42,6 +43,15 @@ static bool isPlaceholderTitle(const QString &title)
         || t == QStringLiteral("default")
         || t == QStringLiteral("untitled")
         || t.startsWith(QStringLiteral("gui-"));
+}
+
+// 会话预览的显示文案：引擎只给事实（preview 纯文本 + previewKinds 说明里面还有
+// 图片/附件），「[图片]」「[附件]」这类词由宿主拼 —— 它们属于展示层，引擎一旦写死
+// 中文文案，换语言/换宿主就得回来改引擎（修错层③）。
+static QString previewLabel(const QJsonObject &s)
+{
+    return MediaTags::withText(s.value(QStringLiteral("preview")).toString(),
+                               s.value(QStringLiteral("previewKinds")).toArray());
 }
 
 // M5-4: ISO 时间 → 简短显示。M13 之后列表已有「今天/昨天/最近 7 天/更早」
@@ -106,7 +116,6 @@ SessionListWidget::SessionListWidget(EngineBridge *bridge, QWidget *parent)
     m_skillBtn->setObjectName(QStringLiteral("sessionSkillButton"));
     m_settingsBtn->setObjectName(QStringLiteral("sessionSettingsButton"));
     loadPinned();
-    loadAliases();
 
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(8, 8, 8, 8);
@@ -261,39 +270,6 @@ void SessionListWidget::savePinned()
     QSettings s = pinnedSettings();
     s.setValue(QStringLiteral("sessions/pinned"), m_pinned);
     s.sync();
-}
-
-// ---------------- 本地别名（会话首条消息片段） ----------------
-void SessionListWidget::loadAliases()
-{
-    QSettings s = pinnedSettings();
-    const QVariantMap map = s.value(QStringLiteral("sessions/aliases")).toMap();
-    m_aliases.clear();
-    for (auto it = map.constBegin(); it != map.constEnd(); ++it)
-        m_aliases.insert(it.key(), it.value().toString());
-}
-
-void SessionListWidget::saveAliases()
-{
-    QSettings s = pinnedSettings();
-    QVariantMap map;
-    for (auto it = m_aliases.constBegin(); it != m_aliases.constEnd(); ++it)
-        map.insert(it.key(), it.value());
-    s.setValue(QStringLiteral("sessions/aliases"), map);
-    s.sync();
-}
-
-void SessionListWidget::setLocalAlias(const QString &sessionId, const QString &text)
-{
-    const QString clean = text.simplified();
-    if (sessionId.isEmpty() || clean.isEmpty())
-        return;
-    m_aliases.insert(sessionId, clean);
-    saveAliases();
-    // 别名要「立刻」可见：先用缓存重放当前列表，再拉一次引擎纠偏
-    if (!m_archivedView && !m_lastRecent.isEmpty())
-        applySessions(m_lastRecent);
-    refresh();
 }
 
 bool SessionListWidget::isPinned(const QString &sessionId) const
@@ -461,19 +437,19 @@ void SessionListWidget::applySessions(const QJsonArray &sessions)
     for (const QJsonObject &s : pinnedItems) {
         const QString id = s.value(QStringLiteral("id")).toString();
         const QString title = s.value(QStringLiteral("title")).toString().trimmed();
-        const QString preview = s.value(QStringLiteral("preview")).toString().trimmed();
+        const QString preview = previewLabel(s);
         const QString updated = s.value(QStringLiteral("updatedAt")).toString();
         const QString stamp = updated.isEmpty() ? QString() : shortTime(updated);
 
         // 空会话不该占列表：引擎建库就写 title='新会话'，既没有真标题、
-        // 也没有首条消息预览、也没有本地别名 —— 这种行点开也是空的，纯噪音。
-        if (isPlaceholderTitle(title) && preview.isEmpty()
-                && m_aliases.value(id).isEmpty())
+        // 也没有首条消息预览 —— 这种行点开也是空的，纯噪音。
+        if (isPlaceholderTitle(title) && preview.isEmpty())
             continue;
 
-        // M8: 名字要能看出会话在干什么 —— 优先引擎真标题，其次本地别名
-        // （该会话首条消息片段），再次引擎给的 preview，最后才是「新会话」占位
-        const QString alias = m_aliases.value(id);
+        // M8: 名字要能看出会话在干什么 —— 唯一来源是引擎：有真标题用标题，
+        // 占位标题（用户还没重命名）时用引擎给的首条消息 preview，最后才是「新会话」。
+        // 宿主不再自存一份别名：那份只在本机 ini 里，换机/清配置就丢，且会和引擎的
+        // preview 打架（同一个事实两个来源）。
         const QFont itemFont = m_list->font();
         const QFontMetrics fm(itemFont);
         const bool pinned = isPinned(id);
@@ -492,9 +468,6 @@ void SessionListWidget::applySessions(const QJsonArray &sessions)
             } else {
                 secondLine = elidePx(stamp, itemFont, kItemTextWidth);
             }
-        } else if (!alias.isEmpty()) {
-            mainText = elidePx(alias, itemFont, mainW);
-            secondLine = elidePx(stamp, itemFont, kItemTextWidth);
         } else if (!preview.isEmpty()) {
             mainText = elidePx(preview, itemFont, mainW);
             secondLine = elidePx(stamp, itemFont, kItemTextWidth);

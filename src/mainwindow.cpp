@@ -99,9 +99,8 @@ MainWindow::MainWindow(QWidget *parent)
     // M3-6: 引擎事件 → 解析 models 展示模型信息
     connect(m_engine.get(), &EngineBridge::eventReceived,
             this, &MainWindow::onEngineEvent);
-    // M8: 会话首条消息 → 侧边栏别名，让列表名字能看出会话内容
-    connect(m_chat, &ChatWidget::firstMessageSent,
-            m_sessions, &SessionListWidget::setLocalAlias);
+    // M8: 会话首条消息 → 侧边栏名字由引擎 preview 负责（宿主不再存本地别名）
+    // 修错层 ②：名字的唯一来源是引擎（title / preview），宿主不写第二份。
     // 文件夹拖进窗口 → 问一句要不要切成工作目录（不弹窗就默默重启引擎太粗暴）
     connect(m_chat, &ChatWidget::directoryDropRequested, this,
             [this](const QString &dir) {
@@ -245,6 +244,12 @@ void MainWindow::onEngineEvent(const QJsonObject &obj)
     const QJsonObject main = configured.value(QStringLiteral("main")).toObject();
     const QString model = main.value(QStringLiteral("model")).toString();
     const QString provider = main.value(QStringLiteral("provider")).toString();
+    // 密钥状态也归引擎判定（它是唯一读 .env 并知道 provider 差异的一方）
+    const QJsonValue hasKey = main.value(QStringLiteral("hasApiKey"));
+    if (hasKey.isBool()) {
+        m_engineHasApiKey = hasKey.toBool() ? 1 : 0;
+        updateKeyHint();
+    }
 
     QString info;
     if (!model.isEmpty()) {
@@ -304,58 +309,38 @@ void MainWindow::openSettingsPanel()
     layout->setContentsMargins(0, 0, 0, 0);
     layout->addWidget(panel);
     dlg->exec();
-    // 填完 key 回来，状态栏提示应该自己消失
-    const bool hadHint = (m_keyHintButton != nullptr);
+    // 填完 key 回来：让引擎重新判定一次（它会重读 ~/.flare/.env），
+    // 提示在 hasApiKey 真正翻成 true 的那一帧才撤，不靠宿主猜。
+    m_keySavedNoticePending = (m_keyHintButton != nullptr);
     checkApiKeyConfigured();
-    if (hadHint && !m_keyHintButton)
-        statusBar()->showMessage(QStringLiteral("API Key 已保存，下一轮对话即生效"), 6000);
 }
 
 // 装了包、打开界面、发消息却没有任何反应 —— 首次使用最容易卡在这一步。
 // 与其等引擎抛错，不如在状态栏常驻一个能点的提示。
-bool MainWindow::envHasApiKey(const QString &envText)
-{
-    const QStringList lines = envText.split(QLatin1Char('\n'));
-    for (const QString &raw : lines) {
-        const QString line = raw.trimmed();
-        if (line.isEmpty() || line.startsWith(QLatin1Char('#'))
-            || !line.contains(QLatin1Char('=')))
-            continue;
-        // 与引擎 internal/config LoadDotEnv 的解析保持一致：
-        // 容许 "export " 前缀、容许单/双引号包裹
-        QString keyName = line.section(QLatin1Char('='), 0, 0).trimmed();
-        if (keyName.startsWith(QLatin1String("export ")))
-            keyName = keyName.mid(7).trimmed();
-        QString value = line.section(QLatin1Char('='), 1).trimmed();
-        if (value.size() >= 2
-            && ((value.startsWith(QLatin1Char('"')) && value.endsWith(QLatin1Char('"')))
-                || (value.startsWith(QLatin1Char('\'')) && value.endsWith(QLatin1Char('\'')))))
-            value = value.mid(1, value.size() - 2);
-        if (value.isEmpty())
-            continue;
-        // DEEPSEEK_API_KEY / OPENAI_API_KEY / LLM_API_KEY 都算已配置；
-        // 形如 DEEPSEEK_API_KEY= 的空值不算（模板就是这样，不能当成已配置）
-        if (keyName.endsWith(QLatin1String("API_KEY")))
-            return true;
-    }
-    return false;
-}
-
+//
+// 「有没有 key」这个问题只有引擎能回答：它既读进程环境也读 ~/.flare/.env，还知道
+// 每个 provider 该用哪个变量（deepseek / anthropic / openai 各不相同）。宿主再自己
+// 解析一遍 .env 就是第二份实现，改一处必漏另一处 —— 之前两边对同一个 .env 会给出
+// 相反结论（宿主把任何以 API_KEY 结尾的变量都算配置过）。现在只认引擎的 hasApiKey。
 void MainWindow::checkApiKeyConfigured()
 {
-    QString envText;
-    QFile f(QDir::homePath() + QStringLiteral("/.flare/.env"));
-    if (f.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        envText = QString::fromUtf8(f.readAll());
-        f.close();
-    }
-    const bool hasKey = envHasApiKey(envText);
+    // 异步：models 事件 → onEngineEvent() → updateKeyHint()
+    if (m_engine && m_engine->isRunning())
+        m_engine->queryModels();
+}
 
-    if (hasKey) {
+void MainWindow::updateKeyHint()
+{
+    if (m_engineHasApiKey != 0) {
+        // 已配置，或者引擎还没答上来 —— 都不拦着用户
         if (m_keyHintButton) {
             statusBar()->removeWidget(m_keyHintButton);
             m_keyHintButton->deleteLater();
             m_keyHintButton = nullptr;
+        }
+        if (m_engineHasApiKey == 1 && m_keySavedNoticePending) {
+            m_keySavedNoticePending = false;
+            statusBar()->showMessage(QStringLiteral("API Key 已保存，下一轮对话即生效"), 6000);
         }
         return;
     }

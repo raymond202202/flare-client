@@ -1,6 +1,7 @@
 #include "chatwidget.h"
 #include "markdownlite.h"
 #include "flaretime.h"
+#include "mediatags.h"
 
 // M15-3：时间戳行（定义在 appendMessage 之前，endStream 也要用）
 static QString stampRow(const QString &stamp);
@@ -269,12 +270,6 @@ void ChatWidget::sendMessage()
         appendMessage(QStringLiteral("附件"), names.join(QStringLiteral("，")));
     }
 
-    // M8 首条消息 → 交给会话列表当别名，解决「名字看不出会话在干什么」
-    if (!m_firstMessageDone && !text.isEmpty()) {
-        m_firstMessageDone = true;
-        emit firstMessageSent(m_sessionId, text);
-    }
-
     m_input->clear();
     m_attachments.clear();
     m_drafts.remove(m_sessionId); // 已发出，草稿作废
@@ -499,7 +494,6 @@ void ChatWidget::setSession(const QString &sessionId)
         m_bridge->cancel(m_sessionId);
     m_sessionId = sessionId;
     m_streaming = false;
-    m_firstMessageDone = false; // M8：新会话重新计首条消息（历史非空时由 renderHistory 置回 true）
     // 恢复目标会话的草稿；附件可能已被用户在文件管理器删掉，落地前滤一遍
     const Draft draft = m_drafts.value(sessionId);
     m_input->setText(draft.text);
@@ -1036,11 +1030,14 @@ void ChatWidget::renderHistory(const QJsonArray &messages)
         return;
     }
     setSuggestVisible(false); // 有历史 = 已经在对话，引导收起来
-    m_firstMessageDone = true; // M8：已有历史 → 不再用新消息覆盖会话别名
     for (const QJsonValue &v : messages) {
         const QJsonObject m = v.toObject();
         const QString role = m.value(QStringLiteral("role")).toString();
-        const QString content = m.value(QStringLiteral("content")).toString();
+        // 引擎下发的是事实（content + contentKinds），不是文案：粘过图片的消息，
+        // 正文里没有图，只有 kinds=["image"]。这里由宿主补「[图片]」。
+        const QString content = MediaTags::withText(
+            m.value(QStringLiteral("content")).toString(),
+            m.value(QStringLiteral("contentKinds")).toArray());
         if (content.isEmpty())
             continue;
         // M15-3：历史消息用引擎给的 createdAt（RFC3339 UTC，已统一到本地时区）

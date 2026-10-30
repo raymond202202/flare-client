@@ -39,8 +39,8 @@ public slots:
     void openSkillPanel();
     // M6-2 打开设置面板（API key 填写弹窗）
     void openSettingsPanel();
-    // .env 文本里是否已有非空 API Key（纯函数，便于单测；不读磁盘）
-    static bool envHasApiKey(const QString &envText);
+    // 引擎上报的「主模型有没有 key」：-1 未知 / 0 没有 / 1 有
+    int engineHasApiKey() const { return m_engineHasApiKey; }
     // M3-6: 解析 models 事件，仅展示 model/provider（不泄露 key/baseURL）
     void onEngineEvent(const QJsonObject &obj);
     // 打开「版本与更新」面板（GUI 版本 + 内核名字/版本，两条更新检查互相独立）
@@ -75,7 +75,12 @@ private:
     QPushButton *m_engineButton = nullptr;   // 引擎状态 + 重启入口（状态栏常驻）
     // 首次使用没有 API Key 时的状态栏常驻提示（可点开设置）
     QPushButton *m_keyHintButton = nullptr;
+    int m_engineHasApiKey = -1;            // 引擎上报的主模型 key 状态（三态）
+    bool m_keySavedNoticePending = false;  // 刚从设置面板回来，等 hasApiKey 翻转后道一声
+    // 问引擎要一次 models（key 状态由引擎判定，宿主不自己解析 .env）
     void checkApiKeyConfigured();
+    // 按引擎上报的 hasApiKey 增删状态栏常驻提示
+    void updateKeyHint();
     QSystemTrayIcon *m_tray = nullptr;
     bool m_forceQuit = false;   // 托盘「退出」置位，closeEvent 才真正放行
     QString m_modelInfo;

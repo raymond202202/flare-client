@@ -58,8 +58,6 @@ public:
     // M13: 条目副行的时间戳。纯函数（now 由调用方给，便于单测）：
     // 今天 HH:mm / 今年 MM-dd / 跨年 yyyy-MM-dd
     static QString shortStamp(const QString &iso, const QDateTime &now);
-    // M8: 本地别名（该会话首条消息的片段）—— 引擎 title 是占位值时用它，让名字有意义
-    void setLocalAlias(const QString &sessionId, const QString &text);
     // M14: 最近一次「已通知宿主」的会话 id（键盘/鼠标共用一条去重路径）
     QString navEmittedId() const { return m_navEmittedId; }
 
@@ -107,8 +105,6 @@ private:
     void updateEmptyHint();          // 按当前视图/搜索词刷新空状态文案
     void loadPinned();
     void savePinned();
-    void loadAliases();
-    void saveAliases();
     QListWidgetItem *currentItem() const;
 
     EngineBridge *m_bridge;
@@ -124,9 +120,8 @@ private:
     QLabel *m_emptyHint = nullptr;  // 空列表提示（覆盖在列表区，不参与 count()）
 
     QStringList m_pinned;         // 置顶会话 id（本地持久化）
-    QHash<QString, QString> m_aliases; // 会话 id → 首条消息片段（本地持久化）
     bool m_archivedView = false;  // 当前列表是否为归档箱
-    // M8：缓存最近一次列表数据，用于本地别名改写后即时重放（不依赖引擎回执）
+    // 缓存最近一次列表数据，用于视图切换时先重放（不依赖引擎回执）
     QJsonArray m_lastRecent;
     QJsonArray m_lastArchived;
     bool m_renaming = false;      // 行内重命名进行中
