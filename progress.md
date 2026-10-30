@@ -103,9 +103,23 @@
 ### 0.6.177 · 分层错层④收口 + CI 私有仓适配（2026-10-30）
 - 引擎侧：`cpmContentFacts` 抽出，预览与 `get_messages` 共用；`MessageRow.contentKinds` 只下发 image/file 事实；`DeserializeContent` 喂模型用中性 `[image]`/`[file]`；老数据字面量 `[图片]` 被摘除。
 - 客户端侧：新增 `src/mediatags.{h,cpp}` 作为「事实 → 展示词」唯一出口，会话列表与历史消息共用；`renderHistory` 消费 `contentKinds`，纯图片消息正文为空也不再被当空消息丢掉。
-- 测试：引擎 `go test ./...` 全绿（含 `write_test.go` 与两条预览事实用例）；客户端 15 个 ctest 全绿（含 `historyKeepsMediaKinds`）。
+- 测试：引擎 `go test ./...` 全绿（含 `write_test.go` 与两条预览事实用例）；客户端 ctest 14/14 全绿（`chatwidget` 二进制内挂着 `historyKeepsMediaKinds` 等用例槽；ctest 计的是测试条目数，不是槽数）。
 - CI：引擎仓库已转 private，公开客户端仓库 clone 私有引擎必 404（实测 run 41033407712）→ 两份 Windows workflow 搬到引擎仓库，反向 checkout 公开客户端仓，免 PAT；客户端侧 workflow 删除。
 - 安装包：`flare-client-0.6.177` RPM 已装机，`FLARE_DB` 指向夹具库实测引擎返回 `contentKinds`，列表显示「[图片] 看看这张图…」单行省略。
+### 0.6.177 · Windows 包与版本号口径修复（2026-10-30）
+- **版本号收敛为单一来源 = 客户端 `CMakeLists.txt` 的 `project(... VERSION x.y.z)`**：
+  - `packaging/flare-client.rc` → `.rc.in`，`FILEVERSION/FileVersion/ProductVersion` 由 `project(VERSION)` 注入。旧文件写死 `0,6,163,0`，用户在 exe「属性→详细信息」看到的是假版本号。
+  - 仓库根 `VERSION` 文件删除：它停在 `0.6.164` 且**没有任何代码读取**，但两份 Windows workflow 拿它当版本来源，于是 CI 产出的包叫 `0.6.164` 而代码是 `0.6.177`。
+  - `native/macos/build.sh` 默认版本改为从 `CMakeLists.txt` 解析，不再写死 `0.6.163`。
+- **MSVC 构建根本不会编 `.rc`**：原 `if(MINGW)` 分支注释写着「MSVC 走 IDE 资源」，但 CMake 构建没有 IDE —— MSVC 产出的 exe 既无图标也无版本信息。改为 `if(WIN32)` 一律 `enable_language(RC)` + 用 `configure_file` 生成的 `.rc`。
+  - `.rc.in` 里 `.ico` 必须写绝对路径（`@CMAKE_CURRENT_SOURCE_DIR@/...`）：生成物在 build 目录，相对路径找不到图标。
+  - 验证：本地 `configure_file` 实测生成 `FILEVERSION 0,6,177,0` / `FileVersion 0.6.177`、无残留占位符；从 CI 下载的包里 `strings -el flare-client.exe` 能读到 `0.6.177` 且有 PNG 图标字节，说明 MSVC 确实把资源编进去了。
+- **Windows 包内容清理**：`build-windows/Release/*` 整目录拷贝会把 `flare_client_core.lib`（链接器导入库）带给用户 → 组装步骤剔除 `.lib/.exp/.pdb/.ilk`。
+- **zip 打包方式换掉**：`Compress-Archive` 写出的条目路径是**反斜杠**（zip 规范要求正斜杠），且中文名不设 UTF-8 标志，解压报 `mismatching local filename` 并乱码 → 改用 `7z a -tzip`（正斜杠 + UTF-8 标志）；说明书文件名改 ASCII `README.txt`（内容仍是中文）。
+- **CI 步骤里 PowerShell 必须与 bash 隔离**：`powershell -Command "... $env:VERSION ..."` 里的 `$env` 被 bash 先展开成空，PowerShell 收到 `:VERSION` 直接 `ParserError`（run 41039864073 第 13 步红）。正确做法是 bash 先拼好名字再传字符串。
+- **ctest 在 Windows runner 上会挂死**：runner 无交互桌面会话，且用例要真起引擎子进程 → 曾挂 8 分钟以上把 `windeployqt`/打包全卡死。现在该步骤 `continue-on-error: true` + `timeout-minutes: 8` + `--timeout 45`，日志留证但不阻塞出包（Linux 本地 ctest 仍是发布闸门）。
+- 结果：`windows-build` run **41042778110 全绿**，产物 `flare-client-0.6.177-win-x64.zip`（17M，zip 完整性校验通过，含 `flare.exe` 11M 内置引擎 + Qt 运行库 + `README.txt`，无 `.lib`）；`native-windows` run **41035707576 全绿**，产物 `flare-0.6.177-win-x64-setup.exe`（NSIS 向导，3.9M）+ zip。
+
 
 ## 构建命令（每轮必须执行）
 
