@@ -53,6 +53,25 @@ static QString shortTime(const QString &iso)
     return dt.toString(QStringLiteral("MM-dd"));
 }
 
+// M13: 会话按时间分组。列表长了以后一屏全是「周三/周四」的 MM-dd，
+// 找「昨天聊的那个」只能一个个点开看。分组标题把扫读成本压到最低。
+// 纯函数，便于单测（不依赖当前时间，now 由调用方给）。
+static QString sessionSection(const QString &iso, const QDateTime &now)
+{
+    const QDateTime dt = QDateTime::fromString(iso, Qt::ISODateWithMs);
+    if (!dt.isValid())
+        return QStringLiteral("更早");
+    const QDate today = now.date();
+    const QDate d = dt.date();
+    if (d == today)
+        return QStringLiteral("今天");
+    if (d == today.addDays(-1))
+        return QStringLiteral("昨天");
+    if (d >= today.addDays(-6))
+        return QStringLiteral("最近 7 天");
+    return QStringLiteral("更早");
+}
+
 // 按像素宽度截断。按字符数截断（left(18)）在 220px 侧栏里会让 18 个汉字
 // 超过可视宽度，Qt 自动折行把一条会话撑成三四行，列表就不成样子了。
 static QString elidePx(const QString &text, const QFont &font, int maxWidthPx)
@@ -201,7 +220,11 @@ SessionListWidget::SessionListWidget(EngineBridge *bridge, QWidget *parent)
             this, &SessionListWidget::onContextMenuRequested);
     connect(m_list, &QListWidget::itemChanged, this, &SessionListWidget::onItemChanged);
     // 双击会话项 = 重命名（与右键菜单同一入口，避免直接编辑时预览行被当成标题）
-    connect(m_list, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem *) {
+    connect(m_list, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem *item) {
+        // 分组标题行不是会话，双击它不应该把「当前会话」拿去改名字
+        if (!item || item->data(kRoleId).toString().isEmpty())
+            return;
+        m_list->setCurrentItem(item);
         renameCurrent();
     });
 
@@ -404,12 +427,44 @@ void SessionListWidget::applySessions(const QJsonArray &sessions)
     pinnedItems.append(normalItems);
 
     m_list->clear();
+
+    // 分组标题行：不可选中、不可编辑、不带 sessionId，点它什么也不发生
+    auto appendSectionHeader = [this](const QString &label) {
+        auto *h = new QListWidgetItem;
+        h->setFlags(Qt::NoItemFlags);
+        h->setText(QStringLiteral("  ") + label);
+        QFont hf = m_list->font();
+        hf.setBold(true);
+        hf.setPointSizeF(qMax(7.5, hf.pointSizeF() - 1.5));
+        // 拉开一点字距：分组标题是「路标」，不是会话名，扫读时该一眼分辨
+        hf.setLetterSpacing(QFont::AbsoluteSpacing, 0.7);
+        h->setFont(hf);
+        h->setForeground(QColor(0xa8, 0x96, 0x80));
+        h->setSizeHint(QSize(kItemTextWidth, 30));
+        h->setTextAlignment(Qt::AlignLeft | Qt::AlignBottom);
+        h->setData(kRoleId, QString());   // 明确「没有会话 id」
+        m_suppressItemChanged = true;
+        m_list->addItem(h);
+        m_suppressItemChanged = false;
+    };
+
+    const QDateTime now = QDateTime::currentDateTime();
+    // 只在「最近会话」主视图分组：搜索结果里一堆没有 updatedAt 的旧会话挤在
+    // 「更早」下、回收站里按删除时间分组，都只是噪音。
+    const bool groupByDay = m_searchBox->text().trimmed().isEmpty() && !m_archivedView;
+    QString currentSection;
     for (const QJsonObject &s : pinnedItems) {
         const QString id = s.value(QStringLiteral("id")).toString();
         const QString title = s.value(QStringLiteral("title")).toString().trimmed();
         const QString preview = s.value(QStringLiteral("preview")).toString().trimmed();
         const QString updated = s.value(QStringLiteral("updatedAt")).toString();
         const QString stamp = updated.isEmpty() ? QString() : shortTime(updated);
+
+        // 空会话不该占列表：引擎建库就写 title='新会话'，既没有真标题、
+        // 也没有首条消息预览、也没有本地别名 —— 这种行点开也是空的，纯噪音。
+        if (isPlaceholderTitle(title) && preview.isEmpty()
+                && m_aliases.value(id).isEmpty())
+            continue;
 
         // M8: 名字要能看出会话在干什么 —— 优先引擎真标题，其次本地别名
         // （该会话首条消息片段），再次引擎给的 preview，最后才是「新会话」占位
@@ -445,6 +500,15 @@ void SessionListWidget::applySessions(const QJsonArray &sessions)
         if (pinned)
             mainText.prepend(QStringLiteral("📌 "));
 
+        // 先落分组标题再落会话项：置顶自成一组，其余按今天/昨天/最近 7 天/更早
+        const QString section = isPinned(id)
+                ? QStringLiteral("📌 置顶")
+                : sessionSection(updated, now);
+        if (groupByDay && section != currentSection) {
+            appendSectionHeader(section);
+            currentSection = section;
+        }
+
         auto *item = new QListWidgetItem;
         if (secondLine.isEmpty()) {
             item->setText(mainText);
@@ -473,6 +537,30 @@ void SessionListWidget::applySessions(const QJsonArray &sessions)
     }
     updateEmptyHint();
     rebuildMenu();
+}
+
+int SessionListWidget::count() const
+{
+    int n = 0;
+    for (int i = 0; i < m_list->count(); ++i) {
+        if (!m_list->item(i)->data(kRoleId).toString().isEmpty())
+            ++n;
+    }
+    return n;
+}
+
+QListWidgetItem *SessionListWidget::sessionItem(int index) const
+{
+    int n = 0;
+    for (int i = 0; i < m_list->count(); ++i) {
+        QListWidgetItem *it = m_list->item(i);
+        if (it->data(kRoleId).toString().isEmpty())
+            continue;   // 分组标题
+        if (n == index)
+            return it;
+        ++n;
+    }
+    return nullptr;
 }
 
 void SessionListWidget::updateEmptyHint()
@@ -505,7 +593,7 @@ void SessionListWidget::resizeEvent(QResizeEvent *event)
 void SessionListWidget::rebuildMenu()
 {
     m_menu->clear();
-    const bool hasSel = currentItem() != nullptr;
+    const bool hasSel = !currentSessionId().isEmpty();   // 分组标题行没有 id
 
     // 菜单项也留名字：e2e 要能直接触发「归档」「恢复」而不靠中文文案匹配
     auto *pinAct = m_menu->addAction(hasSel && isPinned(currentSessionId())
@@ -587,6 +675,8 @@ void SessionListWidget::renameCurrent()
         return;
     m_renaming = true;
     m_renamingId = item->data(kRoleId).toString();
+    if (m_renamingId.isEmpty())   // 分组标题行
+        return;
     m_renamingOriginal = item->data(kRoleTitle).toString();
     // 编辑器里只放标题本体（双行文本进编辑器会把预览也当成标题）
     m_suppressItemChanged = true;
@@ -702,5 +792,8 @@ void SessionListWidget::onItemClicked(QListWidgetItem *item)
     if (!item)
         return;
     rebuildMenu();
-    emit sessionSelected(item->data(kRoleId).toString());
+    const QString picked = item->data(kRoleId).toString();
+    if (picked.isEmpty())   // 分组标题行
+        return;
+    emit sessionSelected(picked);
 }

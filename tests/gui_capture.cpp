@@ -7,6 +7,9 @@
 #include <QJsonObject>
 #include "mainwindow.h"
 #include "chatwidget.h"
+#include "sessionlistwidget.h"
+#include <QDateTime>
+#include <QJsonArray>
 
 int main(int argc, char *argv[])
 {
@@ -16,6 +19,22 @@ int main(int argc, char *argv[])
 
     QTimer::singleShot(2500, [&]() {
         // 注入演示内容（纯 UI 事件，不依赖真实生成）
+        // M13: 注入三条不同日期会话，截图时能看到「今天 / 昨天 / 更早」分组标题
+        if (auto *sessions = w.findChild<SessionListWidget *>()) {
+            const QDateTime now = QDateTime::currentDateTime();
+            const auto iso = [](const QDateTime &dt) {
+                return dt.toString(Qt::ISODateWithMs);
+            };
+            QJsonArray arr;
+            arr.append(QJsonObject{{"id", "demo-today"}, {"title", "今天调的主题色"},
+                                   {"updatedAt", iso(now)}});
+            arr.append(QJsonObject{{"id", "demo-yest"}, {"title", "昨天问的表格渲染"},
+                                   {"updatedAt", iso(now.addDays(-1))}});
+            arr.append(QJsonObject{{"id", "demo-old"}, {"title", "上个月的引擎迁移"},
+                                   {"updatedAt", iso(now.addDays(-40))}});
+            sessions->onEngineEvent(QJsonObject{{"type", "sessions"}, {"sessions", arr}});
+        }
+
         auto *chat = w.findChild<ChatWidget *>();
         qInfo("找到 ChatWidget: %s", chat ? "是" : "否");
         if (chat) {

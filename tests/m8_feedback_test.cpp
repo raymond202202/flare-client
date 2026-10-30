@@ -66,7 +66,7 @@ void M8FeedbackTest::sessionListUsesPreviewAsSecondLine()
     w.onEngineEvent(QJsonObject{{"type", "sessions"}, {"sessions", arr}});
 
     QCOMPARE(w.count(), 2);
-    const QString t0 = w.list()->item(0)->text();
+    const QString t0 = w.sessionItem(0)->text();
     // 占位标题「新会话」不应作为名字出现，主行必须是真实内容
     QVERIFY2(!t0.startsWith(QStringLiteral("新会话")),
              qPrintable(QStringLiteral("占位标题未被替换，实际=%1").arg(t0)));
@@ -74,7 +74,7 @@ void M8FeedbackTest::sessionListUsesPreviewAsSecondLine()
     // 第二行带 preview 与时间
     QVERIFY2(t0.contains(QLatin1Char('\n')), qPrintable(t0));
 
-    const QString t1 = w.list()->item(1)->text();
+    const QString t1 = w.sessionItem(1)->text();
     QVERIFY2(t1.contains(QStringLiteral("天气")), qPrintable(t1));
 }
 
@@ -87,7 +87,7 @@ void M8FeedbackTest::deleteButtonSoftDeletesToRecycleBin()
     QJsonArray arr;
     arr.append(QJsonObject{{"id", "s-del"}, {"title", "待删会话"}, {"preview", "内容预览"}});
     w.onEngineEvent(QJsonObject{{"type", "sessions"}, {"sessions", arr}});
-    w.list()->setCurrentRow(0);
+    w.list()->setCurrentItem(w.sessionItem(0));
 
     QSignalSpy spy(&bridge, &EngineBridge::requestSent);
     w.deleteButton()->click();
@@ -119,15 +119,15 @@ void M8FeedbackTest::archiveViewRestoresInsteadOfDeleting()
     arr.append(QJsonObject{{"id", "s-arch"}, {"title", "已归档会话"}, {"preview", "旧内容"}});
     w.onEngineEvent(QJsonObject{{"type", "archived_sessions"}, {"sessions", arr}});
     QCOMPARE(w.count(), 1);
-    QCOMPARE(w.list()->item(0)->data(Qt::UserRole).toString(), QString("s-recent"));
+    QCOMPARE(w.sessionItem(0)->data(Qt::UserRole).toString(), QString("s-recent"));
 
     // 进入归档视图后才用归档数据填充
     w.showArchived();
     QCOMPARE(w.isArchivedView(), true);
     QCOMPARE(w.count(), 1);
-    QVERIFY2(w.list()->item(0)->text().contains(QStringLiteral("已归档")) ||
-                 w.list()->item(0)->text().contains(QStringLiteral("旧内容")),
-             qPrintable(w.list()->item(0)->text()));
+    QVERIFY2(w.sessionItem(0)->text().contains(QStringLiteral("已归档")) ||
+                 w.sessionItem(0)->text().contains(QStringLiteral("旧内容")),
+             qPrintable(w.sessionItem(0)->text()));
 }
 
 // 1) 本地别名（首条消息）刷新后仍在，且优先于 preview
@@ -142,12 +142,12 @@ void M8FeedbackTest::localAliasSurvivesRefresh()
 
     w.setLocalAlias(QStringLiteral("s-alias"), QStringLiteral("季度复盘会议纪要整理"));
 
-    const QString t0 = w.list()->item(0)->text();
+    const QString t0 = w.sessionItem(0)->text();
     QVERIFY2(t0.startsWith(QStringLiteral("季度复盘")), qPrintable(t0));
 
     // 再灌一次同样数据（模拟 refresh），别名仍在
     w.onEngineEvent(QJsonObject{{"type", "sessions"}, {"sessions", arr}});
-    const QString t1 = w.list()->item(0)->text();
+    const QString t1 = w.sessionItem(0)->text();
     QVERIFY2(t1.startsWith(QStringLiteral("季度复盘")), qPrintable(t1));
 
     // 清理测试写入的别名，避免污染真实 ini

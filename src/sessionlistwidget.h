@@ -50,7 +50,10 @@ public:
     QLabel *emptyHint() const { return m_emptyHint; }
     bool isPinned(const QString &sessionId) const;
     QString currentSessionId() const;
-    int count() const { return m_list->count(); }
+    // 只数「真会话」（分组标题行没有 sessionId，不算）
+    int count() const;
+    // 第 index 个会话项，跳过分组标题行；越界返回 nullptr
+    QListWidgetItem *sessionItem(int index) const;
     // M8: 本地别名（该会话首条消息的片段）—— 引擎 title 是占位值时用它，让名字有意义
     void setLocalAlias(const QString &sessionId, const QString &text);
 
