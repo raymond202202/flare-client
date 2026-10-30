@@ -145,11 +145,7 @@ MainWindow::MainWindow(QWidget *parent)
     m_engineButton->setObjectName(QStringLiteral("engineStatusButton"));
     m_engineButton->setFlat(true);
     m_engineButton->setFocusPolicy(Qt::NoFocus);
-    m_engineButton->setStyleSheet(QStringLiteral(
-        "QPushButton { border:none; background:transparent; font-size:12px;"
-        "              padding:0 6px; color:#b45309; }"
-        "QPushButton:hover { color:#f97316; text-decoration:underline; }"
-        "QPushButton:pressed { color:#c2410c; }"));
+    applyEngineButtonStyle(false);   // 样式随连接状态切换（绿=正常，琥珀=断开可点）
     connect(m_engineButton, &QPushButton::clicked, this, &MainWindow::restartEngine);
     statusBar()->addPermanentWidget(m_engineButton);
     setEngineConnected(false);   // 启动前先按「断开」显示，连上再切
@@ -210,7 +206,8 @@ MainWindow::MainWindow(QWidget *parent)
 
     if (m_engine->start()) {
         setEngineConnected(true);
-        statusBar()->showMessage(QStringLiteral("Flare 引擎已连接"));
+        // 不再往左侧写「引擎已连接」：常驻的状态按钮已经说明这件事，
+        // 两处同时说同一句话只会让状态栏显得吵。
         m_engine->queryVersion();
         m_engine->queryModels();
         m_sessions->refresh();
@@ -497,15 +494,34 @@ void MainWindow::setEngineConnected(bool connected)
     if (!m_engineButton)
         return;
     if (connected) {
-        m_engineButton->setText(QStringLiteral("🔥 引擎已连接"));
-        m_engineButton->setToolTip(QStringLiteral("Flare 引擎正在运行"));
+        m_engineButton->setText(QStringLiteral("● 引擎已连接"));
+        m_engineButton->setToolTip(QStringLiteral("Flare 引擎正在运行（点击可原地重启）"));
         m_engineButton->setCursor(Qt::ArrowCursor);
     } else {
-        m_engineButton->setText(QStringLiteral("⚠️ 引擎已断开 · 点击重启"));
+        m_engineButton->setText(QStringLiteral("⚠ 引擎已断开 · 点击重启"));
         m_engineButton->setToolTip(
             QStringLiteral("Flare 引擎没在运行。点击原地重启，对话记录会保留。"));
         m_engineButton->setCursor(Qt::PointingHandCursor);
     }
+    applyEngineButtonStyle(connected);
+}
+
+// 连接态用安静的绿色（只做状态提示），断开态用琥珀色 + 下划线（明确的行动号召）。
+// 同一个控件两种人格，靠颜色区分，不靠喊。
+void MainWindow::applyEngineButtonStyle(bool connected)
+{
+    if (!m_engineButton)
+        return;
+    m_engineButton->setStyleSheet(
+        connected
+            ? QStringLiteral("QPushButton { border:none; background:transparent; font-size:12px;"
+                             "              padding:0 6px; color:#4b8a5a; }"
+                             "QPushButton:hover { color:#3c7050; }"
+                             "QPushButton:pressed { color:#2f5a40; }")
+            : QStringLiteral("QPushButton { border:none; background:transparent; font-size:12px;"
+                             "              padding:0 6px; color:#b45309; }"
+                             "QPushButton:hover { color:#f97316; text-decoration:underline; }"
+                             "QPushButton:pressed { color:#c2410c; }"));
 }
 
 void MainWindow::restartEngine()

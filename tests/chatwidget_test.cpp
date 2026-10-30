@@ -65,6 +65,8 @@ private slots:
     void pasteImageBecomesAttachment();
     void draftIsolatedPerSession();
     void scrollFollowsOnlyAtBottom();
+    void newContentHintWhenScrolledUp();
+    void atLatestPositionGuardsLayoutJitter();
 };
 
 // 构造一个 text 事件
@@ -228,6 +230,53 @@ void ChatWidgetTest::scrollFollowsOnlyAtBottom()
     w.onEngineEvent(textEvent(QStringLiteral("回到最新")));
     QTest::qWait(20);
     QCOMPARE(bar->value(), bar->maximum());    // 重新开始跟随
+}
+
+// 用户上翻读历史时新内容到达：不能把人拽回底部，也不能什么都不提示
+void ChatWidgetTest::newContentHintWhenScrolledUp()
+{
+    EngineBridge bridge;
+    ChatWidget w(&bridge);
+    w.resize(640, 360);
+    w.show();
+    QTextEdit *out = w.findChild<QTextEdit *>(QStringLiteral("chatOutput"));
+    QVERIFY(out);
+    QPushButton *hint = w.findChild<QPushButton *>(QStringLiteral("jumpToLatestButton"));
+    QVERIFY2(hint, "上翻时新内容到达必须有可点的跳转提示");
+    QVERIFY2(hint->isHidden(), "没有新内容时不该有浮标挡在对话上");
+
+    QString bulk;
+    for (int i = 0; i < 80; ++i)
+        bulk += QStringLiteral("填充行 %1 —— 用来把滚动条撑出来\n").arg(i);
+    w.onEngineEvent(textEvent(bulk));
+    QTest::qWait(50);
+    QScrollBar *bar = out->verticalScrollBar();
+    if (bar->maximum() <= 0)
+        QSKIP("离屏平台未产生滚动范围，跳过");
+
+    bar->setValue(0); // 用户翻到最上面读旧消息
+    QTest::qWait(20);
+    w.onEngineEvent(textEvent(QStringLiteral("上翻期间到达的新内容")));
+    QTest::qWait(20);
+    QCOMPARE(bar->value(), 0); // 位置没被抢走
+    QVERIFY2(!hint->isHidden(), "上翻读历史时有新内容，必须浮出提示，否则用户以为卡死了");
+
+    // 用户自己滚回底部 → 提示要自动消失。
+    // 离屏平台有时算不出 QTextEdit 的滚动范围（maximum 停在 0），那种情况下这段没法可靠验证。
+    if (bar->maximum() <= 0)
+        QSKIP("离屏平台未算出滚动范围，跳过「回到底部自动收起」的界面断言");
+    bar->setValue(bar->maximum());
+    QTest::qWait(60);
+    QVERIFY2(hint->isHidden(), "用户自己回到最新后提示要自动消失");
+}
+
+// 「该不该收起提示」的判定：范围没算出来时绝不能当成已经回到底部
+void ChatWidgetTest::atLatestPositionGuardsLayoutJitter()
+{
+    QVERIFY2(ChatWidget::atLatestPosition(1372, 1372), "贴底就是最新位置");
+    QVERIFY2(ChatWidget::atLatestPosition(1360, 1372), "48px 容差内也算在最新位置");
+    QVERIFY2(!ChatWidget::atLatestPosition(0, 1372), "还在上翻不算最新位置");
+    QVERIFY2(!ChatWidget::atLatestPosition(0, 0), "范围没算出来时不能当成回到底部");
 }
 
 // 引擎跑到一半崩掉，必须在对话区说出来

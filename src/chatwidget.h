@@ -35,6 +35,9 @@ public:
     void attachLocalFiles(const QList<QUrl> &urls);
     QStringList attachments() const { return m_attachments; }
     QString outputText() const { return m_output->toPlainText(); }
+    // 用户是否已经站在最新位置（可以收起「↓ 新内容」提示）。
+    // maximum 在追加内容、布局重算的瞬间可能归零——那不是「回到底部」，是范围还没算出来。
+    static bool atLatestPosition(int value, int maximum);
     QString sessionId() const { return m_sessionId; }
     // 引擎级故障（进程没起来 / 启动失败）要摆在对话区，不能只闪一下状态栏
     void showEngineNotice(const QString &text);
@@ -81,6 +84,10 @@ private:
     // 只有本来就在底部（贴着最新消息）才自动跟随。
     bool nearBottom() const;
     void scrollToBottom();
+    // 上翻读历史时新内容进来：底部浮出「↓ 新内容」提示，点一下跳回最新。
+    // 两个都不能做：硬把用户拽回底部（打断阅读）、什么都不提示（以为卡死了）。
+    void followOrHint(bool atBottom);
+    void positionJumpHint();
     // M8 附件（本地文件 / 剪贴板图片）
     void pickFiles();
     // M10 拖放高亮：拖到面板上时消息区描边变橙，松手还原
@@ -128,6 +135,7 @@ private:
     QWidget *m_attachBar = nullptr;
     QHBoxLayout *m_attachChips = nullptr;
     QStringList m_attachments;       // 待发送附件的绝对路径
+    QPushButton *m_jumpBtn = nullptr; // 「↓ 新内容」浮标（挂在 m_output 上绝对定位）
     bool m_firstMessageDone = false; // 本会话是否已发过消息（别名只取首条）
 };
 

@@ -1,5 +1,6 @@
 #include "markdownlite.h"
 
+#include <QList>
 #include <QRegularExpression>
 #include <QStringList>
 
@@ -37,6 +38,77 @@ QString inlineHtml(QString line)
     return s;
 }
 
+// --- 表格 ---------------------------------------------------------------
+// 模型回答「对比 A 和 B」时几乎总给表格。不收表格的话整段会变成一行行
+// 竖线文本，比不渲染还难读。
+
+// GFM 表格行：首尾都有 |，至少一个格子（`| a | b |`，也接受单列 `| a |`）
+bool looksLikeTableRow(const QString &t)
+{
+    return t.size() >= 3 && t.startsWith(QLatin1Char('|')) && t.endsWith(QLatin1Char('|'))
+           && t.count(QLatin1Char('|')) >= 2;
+}
+
+// 分隔行：只由 | - : 空格组成，且至少一个 -（`|---|:--:|`）。
+// 必须见到分隔行才认成表格 —— 否则含竖线的正文（shell 管道之类）会被误吞。
+bool looksLikeTableSeparator(const QString &t)
+{
+    if (!looksLikeTableRow(t))
+        return false;
+    bool hasDash = false;
+    for (const QChar c : t) {
+        if (c == QLatin1Char('-')) {
+            hasDash = true;
+            continue;
+        }
+        if (c == QLatin1Char('|') || c == QLatin1Char(':') || c.isSpace())
+            continue;
+        return false;
+    }
+    return hasDash;
+}
+
+QStringList splitTableRow(const QString &t)
+{
+    const QString inner = t.mid(1, t.size() - 2); // 去掉首尾 |
+    QStringList cells = inner.split(QLatin1Char('|'));
+    for (QString &c : cells)
+        c = c.trimmed();
+    return cells;
+}
+
+// Qt 富文本支持 table/cellpadding/cellspacing/bgcolor，但不支持
+// border-collapse 与 border-color，所以表头用底色区分、网格线交给 border=1。
+QString tableHtml(const QList<QStringList> &rows)
+{
+    if (rows.isEmpty())
+        return QString();
+
+    int cols = 0;
+    for (const QStringList &r : rows)
+        cols = qMax(cols, r.size());
+
+    QString h = QStringLiteral(
+        "<table cellspacing=\"0\" cellpadding=\"5\" border=\"1\" width=\"100%\">");
+    for (int i = 0; i < rows.size(); ++i) {
+        const bool header = (i == 0);
+        const QStringList &row = rows.at(i);
+        h += QStringLiteral("<tr>");
+        for (int c = 0; c < cols; ++c) {
+            const QString cell = c < row.size() ? row.at(c) : QString();
+            if (header) {
+                h += QStringLiteral("<td bgcolor=\"#f7f3ec\"><b>%1</b></td>")
+                         .arg(inlineHtml(cell));
+            } else {
+                h += QStringLiteral("<td>%1</td>").arg(inlineHtml(cell));
+            }
+        }
+        h += QStringLiteral("</tr>");
+    }
+    h += QStringLiteral("</table>");
+    return h;
+}
+
 } // namespace
 
 QString MarkdownLite::toHtml(const QString &text)
@@ -49,7 +121,9 @@ QString MarkdownLite::toHtml(const QString &text)
     const QRegularExpression headingRe(QStringLiteral("^(#{1,6})\\s+(.*)$"));
     const QRegularExpression bulletRe(QStringLiteral("^[-*+]\\s+(.*)$"));
 
-    for (const QString &raw : lines) {
+    // 用索引循环：表格要往后看一行（分隔行）才能确认，range-for 做不到
+    for (int i = 0; i < lines.size(); ++i) {
+        const QString raw = lines.at(i);
         const QString trimmed = raw.trimmed();
 
         if (trimmed.startsWith(QStringLiteral("```"))) {
@@ -70,6 +144,23 @@ QString MarkdownLite::toHtml(const QString &text)
 
         if (trimmed.isEmpty())
             continue; // 空行不再额外加 <br/>，行间已有一个
+
+        // 表格：本行像表头，且下一行是 |---|---| 分隔行
+        if (looksLikeTableRow(trimmed) && i + 1 < lines.size()
+            && looksLikeTableSeparator(lines.at(i + 1).trimmed())) {
+            QList<QStringList> rows;
+            rows << splitTableRow(trimmed);
+            i += 2; // 跳过表头与分隔行
+            while (i < lines.size() && looksLikeTableRow(lines.at(i).trimmed())) {
+                rows << splitTableRow(lines.at(i).trimmed());
+                ++i;
+            }
+            --i; // 外层 for 还会 ++i
+            if (!out.isEmpty())
+                out += QStringLiteral("<br/>");
+            out += tableHtml(rows);
+            continue;
+        }
 
         QString line;
         const auto heading = headingRe.match(trimmed);

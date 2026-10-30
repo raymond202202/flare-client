@@ -61,6 +61,8 @@ private:
     void setupTray();
     // 状态栏引擎状态：连接成功/断开两态，断开时可点重启
     void setEngineConnected(bool connected);
+    // 状态按钮两套配色：绿=正常、琥珀=断开可点。颜色是这里唯一的语义载体，别省。
+    void applyEngineButtonStyle(bool connected);
     QString workdirText() const;
     QString settingsFilePath() const;
 

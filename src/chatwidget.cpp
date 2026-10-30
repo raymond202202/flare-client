@@ -85,6 +85,39 @@ ChatWidget::ChatWidget(EngineBridge *bridge, QWidget *parent)
     m_output->setStyleSheet(QString::fromLatin1(kOutputStyle));
     layout->addWidget(m_output, 1);
 
+    // 上翻读历史时新内容到达 → 右下角浮出「↓ 新内容」，点一下跳回最新。
+    // 挂在 m_output 上做绝对定位：不占布局高度，不会把输入区顶下去。
+    m_jumpBtn = new QPushButton(QStringLiteral("↓ 新内容"), m_output);
+    m_jumpBtn->setObjectName(QStringLiteral("jumpToLatestButton"));
+    m_jumpBtn->setCursor(Qt::PointingHandCursor);
+    m_jumpBtn->setFocusPolicy(Qt::NoFocus);
+    m_jumpBtn->setToolTip(QStringLiteral("跳到最新消息"));
+    m_jumpBtn->setStyleSheet(
+        QStringLiteral("QPushButton{background:#ffffff;border:1px solid #d9c9ff;"
+                       "border-radius:12px;padding:4px 12px;color:#6d4aff;font-size:12px;}"
+                       "QPushButton:hover{background:#f5f0ff;border-color:#6d4aff;}"));
+    m_jumpBtn->hide();
+    connect(m_jumpBtn, &QPushButton::clicked, this, [this]() {
+        scrollToBottom();
+        if (m_jumpBtn)
+            m_jumpBtn->hide();
+    });
+    m_output->installEventFilter(this); // 尺寸变化时重新贴到右下角
+    // 用户自己滚回底部 → 提示自动消失，不需要他再去点一下。
+    // valueChanged 之外还要挂 rangeChanged：追加内容会先把滚动范围撑大，
+    // 这一瞬间 value 可能暂时「离底部很远」，等布局稳定后不会再发 valueChanged。
+    const auto hideIfAtBottom = [this]() {
+        const QScrollBar *bar = m_output->verticalScrollBar();
+        if (m_jumpBtn && !m_jumpBtn->isHidden() && atLatestPosition(bar->value(), bar->maximum()))
+            m_jumpBtn->hide();
+    };
+    connect(m_output->verticalScrollBar(), &QScrollBar::valueChanged, this, [hideIfAtBottom](int) {
+        hideIfAtBottom();
+    });
+    connect(m_output->verticalScrollBar(), &QScrollBar::rangeChanged, this, [hideIfAtBottom](int, int) {
+        hideIfAtBottom();
+    });
+
     // M8 附件 chip 行（用户反馈：输入框不能粘贴图片 / 没有读取本地文件的入口）
     m_attachBar = new QWidget(this);
     m_attachChips = new QHBoxLayout(m_attachBar);
@@ -371,6 +404,9 @@ void ChatWidget::dropEvent(QDropEvent *event)
 
 bool ChatWidget::eventFilter(QObject *watched, QEvent *event)
 {
+    // 「↓ 新内容」浮标贴在消息区右下角，窗口缩放后要跟着重贴
+    if (watched == m_output && event->type() == QEvent::Resize)
+        positionJumpHint();
     // M8: 输入框上 Ctrl+V —— 剪贴板是图片就存 png 挂成附件，否则交给 QLineEdit 走文本粘贴
     if (watched == m_input && event->type() == QEvent::KeyPress) {
         auto *ke = static_cast<QKeyEvent *>(event);
@@ -551,10 +587,9 @@ void ChatWidget::appendStreamChunk(const QString &chunk)
         m_streamStartPos = cursor.position();   // M9: 正文起点，收流后在这段上做 Markdown 渲染
     }
     cursor.insertText(chunk);
-    if (atBottom) {
+    if (atBottom)
         m_output->setTextCursor(cursor);
-        scrollToBottom();
-    }
+    followOrHint(atBottom);
 }
 
 void ChatWidget::endStream()
@@ -606,8 +641,7 @@ void ChatWidget::appendToolCard(const QString &icon, const QString &title, const
                              .arg(icon, title.toHtmlEscaped(), body.toHtmlEscaped());
     cursor.insertHtml(html);
     cursor.insertBlock();
-    if (atBottom)
-        scrollToBottom();
+    followOrHint(atBottom);
 }
 
 // M3-5: 确认门弹窗 —— 浅色紫配 QMessageBox，允许=allow_once / 拒绝=deny
@@ -656,6 +690,13 @@ void ChatWidget::respondConfirm(const QString &id, const QString &decision)
     m_bridge->confirmResult(m_sessionId, id, decision);
 }
 
+bool ChatWidget::atLatestPosition(int value, int maximum)
+{
+    if (maximum <= 0)
+        return false; // 范围还没算出来，不能据此收提示
+    return value >= maximum - 48; // 48px 容差：贴底一点点也算在最新位置
+}
+
 bool ChatWidget::nearBottom() const
 {
     const QScrollBar *bar = m_output->verticalScrollBar();
@@ -667,6 +708,32 @@ void ChatWidget::scrollToBottom()
 {
     QScrollBar *bar = m_output->verticalScrollBar();
     bar->setValue(bar->maximum());
+}
+
+void ChatWidget::followOrHint(bool atBottom)
+{
+    if (atBottom) {
+        scrollToBottom();
+        if (m_jumpBtn)
+            m_jumpBtn->hide();
+        return;
+    }
+    // 用户在看历史：内容照常进文档，但不抢他的位置，只给一个可点的提示
+    if (m_jumpBtn && m_jumpBtn->isHidden()) {
+        positionJumpHint();
+        m_jumpBtn->show();
+        m_jumpBtn->raise();
+    }
+}
+
+void ChatWidget::positionJumpHint()
+{
+    if (!m_jumpBtn || !m_output)
+        return;
+    const int margin = 14;
+    m_jumpBtn->adjustSize();
+    m_jumpBtn->move(m_output->width() - m_jumpBtn->width() - margin,
+                    m_output->height() - m_jumpBtn->height() - margin);
 }
 
 void ChatWidget::showEngineNotice(const QString &text)
@@ -703,10 +770,9 @@ void ChatWidget::appendMessage(const QString &who, const QString &text)
     }
 
     m_output->append(html);
-    if (atBottom)
-        scrollToBottom();
-    else
-        m_output->verticalScrollBar()->setValue(saved);
+    if (!atBottom)
+        m_output->verticalScrollBar()->setValue(saved); // 守住用户当前阅读位置
+    followOrHint(atBottom);
 }
 
 // ============================================================

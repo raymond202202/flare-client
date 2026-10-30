@@ -54,6 +54,11 @@ add_executable(reentrancy_live reentrancy_live.cpp)
 target_link_libraries(reentrancy_live PRIVATE Qt6::Widgets flare_client_core)
 
 # M8-1 版本与更新（GUI 版本 + 内核名字/版本，两条检查互相独立）
+# MarkdownLite 渲染（表格/代码块/内联标记；纯字符串处理，不需要 QApplication）
+add_executable(t_markdownlite markdownlite_test.cpp)
+target_link_libraries(t_markdownlite PRIVATE Qt6::Test flare_client_core)
+add_test(NAME markdownlite COMMAND t_markdownlite)
+
 add_executable(t_version version_test.cpp)
 target_link_libraries(t_version PRIVATE Qt6::Test flare_client_core)
 add_test(NAME version COMMAND t_version)
