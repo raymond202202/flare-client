@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(flare-client VERSION 0.6.164 LANGUAGES CXX)
+project(flare-client VERSION 0.6.168 LANGUAGES CXX)
 
 # ============================================================
 # Flare GUI 客户端 — 三平台统一 Qt 6 Widgets
@@ -91,6 +91,19 @@ endif()
 install(TARGETS flare-client RUNTIME DESTINATION bin)
 install(FILES packaging/flare-client.desktop DESTINATION share/applications)
 install(FILES packaging/flare-client.svg DESTINATION share/icons/hicolor/scalable/apps)
+
+# ---------- 内置引擎（GUI 包自带 flare 引擎）----------
+# 终端用户不该为「缺 Node / 版本号不对」操心，所以正式发出的 GUI 包里必须带引擎。
+# 用法：cmake -S . -B build-fedora -DFLARE_ENGINE_BINARY=/path/to/flare
+#      CPack 会把引擎装到 /usr/lib64/flare-client/flare，客户端启动时按候选路径自寻。
+set(FLARE_ENGINE_BINARY "" CACHE FILEPATH "预编译好的 flare 引擎二进制，打包时内置进 GUI 包")
+if(FLARE_ENGINE_BINARY)
+  if(NOT EXISTS "${FLARE_ENGINE_BINARY}")
+    message(FATAL_ERROR "FLARE_ENGINE_BINARY 指向的文件不存在: ${FLARE_ENGINE_BINARY}")
+  endif()
+  install(PROGRAMS "${FLARE_ENGINE_BINARY}" DESTINATION lib64/flare-client RENAME flare)
+  message(STATUS "GUI 包将内置引擎: ${FLARE_ENGINE_BINARY}")
+endif()
 
 # ---------- 通用 CPack 配置 ----------
 set(CPACK_PACKAGE_NAME "flare-client")

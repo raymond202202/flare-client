@@ -1,10 +1,72 @@
 #include "engine_bridge.h"
 
 #include <QCoreApplication>
+#include <QDir>
 #include <QFileInfo>
 #include <QJsonDocument>
+#include <QStandardPaths>
 #include <QTimer>
 #include <QDebug>
+
+// ============================================================
+// 引擎查找（可单测：不启动进程，只算路径）
+// ============================================================
+
+QStringList engineCandidates()
+{
+#ifdef Q_OS_WIN
+    const QString engineName = QStringLiteral("flare.exe");
+#else
+    const QString engineName = QStringLiteral("flare");
+#endif
+    QStringList list;
+
+    // 1) FLARE_ENGINE_BIN —— 显式指定优先。自动化测试在 build 目录跑时用得上，
+    //    高级用户换了自编译引擎也靠它，显式配置就该赢。
+    const QString explicitEngine = QString::fromLocal8Bit(qgetenv("FLARE_ENGINE_BIN"));
+    if (!explicitEngine.isEmpty())
+        list << explicitEngine;
+
+    // 2) 与本程序同目录 —— 便携版、Windows 安装包、macOS .app 内都是这个布局
+    const QString appDir = QCoreApplication::applicationDirPath();
+    list << appDir + QLatin1Char('/') + engineName;
+
+#ifdef Q_OS_MAC
+    // .app 里引擎可以放 Resources（codesign 更省事）
+    list << appDir + QStringLiteral("/../Resources/") + engineName;
+#endif
+
+#ifndef Q_OS_WIN
+    // 3) 系统安装位置 —— RPM（/usr/lib64）与 deb（/usr/lib，含 multiarch）。
+    //    包管理器把引擎和 GUI 分开放在 lib 目录，绝不是 /usr/bin 同目录：
+    //    只查同目录 = 正式装完就用不了。
+    list << QStringLiteral("/usr/lib64/flare-client/flare")
+         << QStringLiteral("/usr/lib/flare-client/flare")
+         << QStringLiteral("/usr/lib/x86_64-linux-gnu/flare-client/flare")
+         << QStringLiteral("/usr/lib/aarch64-linux-gnu/flare-client/flare");
+    // 4) 用户级安装（装到自家目录的引擎，不碰系统目录）
+    list << QDir::homePath() + QStringLiteral("/.flare/install/flare");
+#endif
+
+    // 5) 最后退回 PATH —— 开发环境
+    const QString onPath = QStandardPaths::findExecutable(engineName);
+    if (!onPath.isEmpty())
+        list << onPath;
+
+    return list;
+}
+
+QString pickEngine(const QStringList &candidates)
+{
+    for (const QString &c : candidates) {
+        if (c.isEmpty())
+            continue;
+        const QFileInfo fi(c);
+        if (fi.exists() && fi.isExecutable())
+            return c;
+    }
+    return QString();
+}
 
 // ============================================================
 // 纯函数：协议解析（可单测，不依赖 QProcess）
@@ -60,30 +122,11 @@ bool EngineBridge::start(const QStringList &args)
     // 没有 cwd 参数可用，这是零协议改动下让「选择工作目录 / 读本地文件」生效的唯一途径。
     if (!m_workdir.isEmpty() && QFileInfo(m_workdir).isDir())
         m_process->setWorkingDirectory(m_workdir);
-    // 查找 flare 引擎，优先级：
-    //   1) 与本程序同目录的引擎 —— GUI 安装包把引擎一起打进去了
-    //      （macOS: Flare Client.app/Contents/MacOS/flare
-    //        Windows: C:\Program Files\Flare Client\flare.exe
-    //        Linux: /usr/lib64/flare-client/flare）
-    //      用户不需要额外下载引擎，也不需要 PATH 里有 flare。
-    //   2) 退回 PATH —— 开发环境，或用户自己装了命令行版引擎的情况。
-#ifdef Q_OS_WIN
-    const QString engineName = QStringLiteral("flare.exe");
-#else
-    const QString engineName = QStringLiteral("flare");
-#endif
-    const QString bundledEngine =
-        QCoreApplication::applicationDirPath() + QLatin1Char('/') + engineName;
-    // 0) FLARE_ENGINE_BIN —— 显式指定引擎二进制。
-    //    给自动化测试用（e2e 在 build 目录跑，同目录没有引擎、PATH 里也没有），
-    //    也给高级用户装了自己编译的引擎时用。优先级最高，因为显式配置就该赢。
-    const QString explicitEngine = QString::fromLocal8Bit(qgetenv("FLARE_ENGINE_BIN"));
-    QString program;
-    if (!explicitEngine.isEmpty() && QFileInfo(explicitEngine).isExecutable())
-        program = explicitEngine;
-    else if (QFileInfo::exists(bundledEngine))
-        program = bundledEngine;
-    else
+    // 查找 flare 引擎：候选路径见 engineCandidates()（按优先级）。
+    // 一个都没找到时退回 "flare"，让 QProcess 的失败信息如实暴露问题，
+    // 而不是我们在这里编一个「请确认已安装」的模糊提示。
+    QString program = pickEngine(engineCandidates());
+    if (program.isEmpty())
         program = QStringLiteral("flare");
     m_process->start(program, args);
     return m_process->waitForStarted(3000);

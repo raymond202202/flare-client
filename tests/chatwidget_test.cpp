@@ -32,6 +32,7 @@ class ChatWidgetTest : public QObject
 
 private slots:
     void widgetHasInputAndOutput();
+    void suggestChipsGuideFirstRun();
     void sendAppendsMessage();
     void sendClearsInput();
     void mainWindowConnectsEngine();
@@ -311,6 +312,29 @@ void ChatWidgetTest::widgetHasInputAndOutput()
     QVERIFY(w.input() != nullptr);
     QVERIFY(w.output() != nullptr);
     QVERIFY(w.input()->placeholderText().contains("输入"));
+}
+
+// 首启引导：欢迎海报下面必须有「可以点这个开始」的起点，
+// 而且要「只填不发」+ 一开始对话就收起（引导不是常驻噪音）。
+void ChatWidgetTest::suggestChipsGuideFirstRun()
+{
+    EngineBridge bridge;
+    ChatWidget widget(&bridge);
+    QPushButton *chip = nullptr;
+    for (auto *b : widget.findChildren<QPushButton *>()) {
+        if (b->text().contains(QStringLiteral("表格")))
+            chip = b;
+    }
+    QVERIFY2(chip, "首启应有示例起点 chip");
+    QVERIFY2(widget.suggestVisible(), "欢迎态下引导必须可见");
+    QCOMPARE(widget.input()->text(), QString());   // 初始不该被预填
+
+    chip->click();
+    QCOMPARE(widget.input()->text(), chip->text()); // 点一下只填进输入框…
+    QVERIFY2(!widget.output()->toPlainText().contains(chip->text()), "点 chip 只填不发");
+
+    widget.dismissWelcome();
+    QVERIFY2(!widget.suggestVisible(), "开始对话后引导必须收起");
 }
 
 void ChatWidgetTest::sendAppendsMessage()

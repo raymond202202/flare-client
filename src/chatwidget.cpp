@@ -127,6 +127,38 @@ ChatWidget::ChatWidget(EngineBridge *bridge, QWidget *parent)
     m_attachBar->setVisible(false);
     layout->addWidget(m_attachBar);
 
+    // M12 首启起点 chip（见 chatwidget.h 注释）
+    m_suggestBar = new QWidget(this);
+    {
+        auto *suggestRow = new QHBoxLayout(m_suggestBar);
+        suggestRow->setContentsMargins(0, 0, 0, 0);
+        suggestRow->setSpacing(8);
+        suggestRow->addStretch(1);
+        const QStringList starts{
+            QStringLiteral("帮我解释这段报错"),
+            QStringLiteral("用表格对比两个方案"),
+            QStringLiteral("读完这个文件，告诉我重点"),
+        };
+        for (const QString &seed : starts) {
+            auto *chip = new QPushButton(seed, m_suggestBar);
+            chip->setCursor(Qt::PointingHandCursor);
+            chip->setStyleSheet(QStringLiteral(
+                "QPushButton { background:#fffdf9; color:#9a3412; border:1px solid #fde6bf;"
+                " border-radius:13px; padding:5px 12px; font-size:12px; }"
+                "QPushButton:hover { background:#ffedd0; border-color:#fdba74; }"
+                "QPushButton:pressed { background:#ffe0b0; }"));
+            // 只填不发：用户点完还能改，主动权留在手里
+            connect(chip, &QPushButton::clicked, this, [this, seed]() {
+                m_input->setText(seed);
+                m_input->setFocus();
+            });
+            suggestRow->addWidget(chip);
+        }
+        suggestRow->addStretch(1);
+    }
+    m_suggestBar->setVisible(false);
+    layout->addWidget(m_suggestBar);
+
     // 输入行
     auto *inputRow = new QHBoxLayout;
     m_attachBtn = new QPushButton(QStringLiteral("📎"), this);
@@ -201,7 +233,14 @@ void ChatWidget::sendMessage()
         return;
     if (m_welcomeVisible)
         stopWelcomeBreathing(); // M5-2: 发送首条消息后收起欢迎词
-    endStream(); // 用户新消息前结束未完成流，避免 chunk 串块
+    // 用户在生成中直接发新消息 = 用「说话」打断上一轮（这是唯一的键盘打断方式，
+    // 产品上不占用 Esc）。本地收流之外必须让引擎把上一轮真取消，否则它还在跑，
+    // 迟到的 chunk 会串进新消息里。
+    if (m_streaming) {
+        endStream();                        // 先收下用户已经看到的那半段
+        m_bridge->cancel(m_sessionId);      // 再让引擎别再算上一轮
+        m_stopBtn->setVisible(false);
+    }
 
     // M8 附件：引擎 chat.input 目前只收纯字符串（收 [{type:"text"},{type:"image_url"}]
     // 需要改协议），所以把附件绝对路径附在正文后面 —— 引擎侧有读文件工具，
@@ -780,6 +819,22 @@ void ChatWidget::appendMessage(const QString &who, const QString &text)
 // 展示: "F L A R E"（火焰渐变）+ "Let your inspiration flare 🔥"
 // 呼吸动画: QTimer 80ms 刷新，相位随 sin 波动（与 CLI 同款）
 // ============================================================
+void ChatWidget::setSuggestVisible(bool visible)
+{
+    if (m_suggestBar)
+        m_suggestBar->setVisible(visible);
+}
+
+bool ChatWidget::suggestVisible() const
+{
+    return m_suggestBar && !m_suggestBar->isHidden();
+}
+
+void ChatWidget::dismissWelcome()
+{
+    stopWelcomeBreathing();
+}
+
 void ChatWidget::showWelcomeBanner()
 {
     m_output->clear();
@@ -787,6 +842,7 @@ void ChatWidget::showWelcomeBanner()
     m_welcomeVisible = true;
     updateWelcomeBreath(); // 立即画第一帧
     m_breathTimer->start();
+    setSuggestVisible(true); // 海报下面给出「可以点这个开始」
 }
 
 void ChatWidget::startWelcomeBreathing()
@@ -800,6 +856,8 @@ void ChatWidget::stopWelcomeBreathing()
     if (m_breathTimer)
         m_breathTimer->stop();
     m_welcomeVisible = false;
+    // 引导只在「还没开始」时出现；一旦开始对话就收起来，别变成常驻噪音
+    setSuggestVisible(false);
 }
 
 void ChatWidget::updateWelcomeBreath()
@@ -891,6 +949,7 @@ void ChatWidget::renderHistory(const QJsonArray &messages)
         showWelcomeBanner();
         return;
     }
+    setSuggestVisible(false); // 有历史 = 已经在对话，引导收起来
     m_firstMessageDone = true; // M8：已有历史 → 不再用新消息覆盖会话别名
     for (const QJsonValue &v : messages) {
         const QJsonObject m = v.toObject();

@@ -49,6 +49,16 @@ QString eventType(const QJsonObject &obj);
 // 构造协议请求（单行 JSON）
 QByteArray buildRequest(const QJsonObject &req);
 
+// 引擎二进制候选路径，按优先级排列（可单测的纯逻辑）。
+// 为什么不能只看「与本程序同目录」：生产安装时本程序在 /usr/bin，
+// 引擎在 /usr/lib64/flare-client/，同目录永远找不到 —— 结果就是装好的
+// 正式包一启动就报「引擎启动失败」。凡是「注释里写了路径」的地方，
+// 代码里就必须真的去查那个路径。
+QStringList engineCandidates();
+
+// 从候选里挑第一个「存在且可执行」的；一个都没有返回空串（调用方退回 PATH）
+QString pickEngine(const QStringList &candidates);
+
 class EngineBridge : public QObject
 {
     Q_OBJECT

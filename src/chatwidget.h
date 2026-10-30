@@ -39,6 +39,10 @@ public:
     // maximum 在追加内容、布局重算的瞬间可能归零——那不是「回到底部」，是范围还没算出来。
     static bool atLatestPosition(int value, int maximum);
     QString sessionId() const { return m_sessionId; }
+    // 首启引导是否显示中（测试与上层逻辑用）
+    bool suggestVisible() const;
+    // 收起欢迎态与首启引导（开始对话时调用；加载到非空历史也会自动收起）
+    void dismissWelcome();
     // 引擎级故障（进程没起来 / 启动失败）要摆在对话区，不能只闪一下状态栏
     void showEngineNotice(const QString &text);
     // 草稿按会话隔离：切走再切回来，打的字和挂的附件都还在；
@@ -129,6 +133,11 @@ private:
     int m_streamStartPos = -1;
     QTimer *m_breathTimer = nullptr; // M5-2 欢迎词呼吸动画
     bool m_welcomeVisible = false;   // 欢迎词是否显示中
+
+    // M12 首启起点 chip：欢迎页只有海报、没有下一步，用户会愣在那里。
+    // 三个可点的起点，点一下填进输入框（不代你发送），发出第一条就收起。
+    QWidget *m_suggestBar = nullptr;
+    void setSuggestVisible(bool visible);
 
     // M8 附件区（本地文件 + 剪贴板图片），默认隐藏，有附件才显示
     QPushButton *m_attachBtn = nullptr;

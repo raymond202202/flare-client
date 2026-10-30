@@ -59,6 +59,13 @@ add_executable(t_markdownlite markdownlite_test.cpp)
 target_link_libraries(t_markdownlite PRIVATE Qt6::Test flare_client_core)
 add_test(NAME markdownlite COMMAND t_markdownlite)
 
+# CLI 基本礼仪：--version / --help 必须在没有图形环境时也能用。
+# 这条测试特意不设 QT_QPA_PLATFORM —— 它验证的正是「不需要显示器」。
+add_test(NAME cli_version COMMAND flare-client --version)
+set_tests_properties(cli_version PROPERTIES PASS_REGULAR_EXPRESSION "${PROJECT_VERSION}")
+add_test(NAME cli_help COMMAND flare-client --help)
+set_tests_properties(cli_help PROPERTIES PASS_REGULAR_EXPRESSION "--screenshot")
+
 add_executable(t_version version_test.cpp)
 target_link_libraries(t_version PRIVATE Qt6::Test flare_client_core)
 add_test(NAME version COMMAND t_version)
