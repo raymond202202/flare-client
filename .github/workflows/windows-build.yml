@@ -45,14 +45,15 @@ jobs:
       - name: Install Qt 6.7.3 (MSVC 2022 64-bit)
         shell: bash
         run: |
-          # aqtinstall 3.3.0 解析 6.7.3 的 package XML 会报
-          # "The packages ['qt_base'] were not found" —— 固定 3.2.0 并显式
-          # 指定 archives=qtbase 绕过元包解析（qtbase 自带 windeployqt）。
-          python -m pip install --quiet --disable-pip-version-check "aqtinstall==3.2.0"
-          python -m aqt install-qt windows desktop 6.7.3 win64_msvc2022_64 \
+          # 坑：Qt 6.7.x 的 Windows 官方包只发布 win64_msvc2019_64（MSVC 2019 与
+          # 2022 ABI 兼容，vs2022 编译器可直接链接），win64_msvc2022_64 是 6.8 才有的
+          # 架构名。写错架构名时 aqt 的报错是 "The packages ['qt_base'] were not found
+          # while parsing XML"，极易误判成源站/XML 坏了。
+          python -m pip install --quiet --disable-pip-version-check aqtinstall
+          python -m aqt install-qt windows desktop 6.7.3 win64_msvc2019_64 \
             --archives qtbase -O "$RUNNER_TEMP/Qt"
-          echo "QT_ROOT_DIR=$RUNNER_TEMP/Qt/6.7.3/msvc2022_64" >> "$GITHUB_ENV"
-          ls "$RUNNER_TEMP/Qt/6.7.3/msvc2022_64/bin" | head -10
+          echo "QT_ROOT_DIR=$RUNNER_TEMP/Qt/6.7.3/msvc2019_64" >> "$GITHUB_ENV"
+          ls "$RUNNER_TEMP/Qt/6.7.3/msvc2019_64/bin" | head -10
 
       - name: 安装 Go
         uses: actions/setup-go@v5
