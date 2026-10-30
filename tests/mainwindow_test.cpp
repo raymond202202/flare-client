@@ -79,10 +79,10 @@ void MainWindowTest::modelsEventIgnoresSensitiveFields()
         {"configured", QJsonObject{
             {"main", QJsonObject{{"model", "qwen2.5:7b"},
                                  {"provider", "ollama"},
-                                 {"apiKey", "sk-this-is-a-secret-please-never-print"}}}}}};
+                                 {"apiKey", "dummy-api-key-for-ui-test"}}}}}};
     w.onEngineEvent(ev);
     QCOMPARE(w.modelInfoText(), QString("qwen2.5:7b · ollama"));
-    QVERIFY2(!w.modelInfoText().contains("sk-this-is-a-secret"),
+    QVERIFY2(!w.modelInfoText().contains("dummy-api-key-for-ui-test"),
              "模型信息展示不得包含 apiKey 值");
 }
 
