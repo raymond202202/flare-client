@@ -575,6 +575,11 @@ void MainWindow::setupTray()
     m_tray->show();
 }
 
+bool MainWindow::trayVisible() const
+{
+    return m_tray && m_tray->isVisible();
+}
+
 void MainWindow::closeEvent(QCloseEvent *event)
 {
     saveWindowGeometry();   // 关窗（收进托盘）时顺手记住大小/位置

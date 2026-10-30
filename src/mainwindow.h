@@ -25,6 +25,7 @@ public:
     // 测试接口
     EngineBridge *engine() const { return m_engine.get(); }
     SessionListWidget *sessions() const { return m_sessions; }
+    ChatWidget *chat() const { return m_chat; }
     void restoreWindowGeometry();
     void saveWindowGeometry();
     // M3-6: 当前模型信息显示文本（状态栏），如 "deepseek-chat · deepseek"
@@ -83,6 +84,10 @@ private:
     void updateKeyHint();
     QSystemTrayIcon *m_tray = nullptr;
     bool m_forceQuit = false;   // 托盘「退出」置位，closeEvent 才真正放行
+public:
+    // 托盘里到底有没有图标：--close-test 自检要能回答「关闭后用户找不找得回来」
+    bool trayVisible() const;
+private:
     QString m_modelInfo;
     // 来自 version 协议帧（engine / protocol），未连接时为空
     QString m_kernelVersion;

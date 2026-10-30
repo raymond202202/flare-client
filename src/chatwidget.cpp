@@ -290,6 +290,31 @@ void ChatWidget::pickFiles()
         addAttachment(f);
 }
 
+// 剪贴板图片 → 落盘成 paste-<毫秒>.png 挂成附件。
+// 附件 chip 上要能认出是哪张图，所以文件名带毫秒时间戳而不是随机名。
+bool ChatWidget::pasteImageFromClipboard()
+{
+    const QMimeData *md = QApplication::clipboard() ? QApplication::clipboard()->mimeData()
+                                                    : nullptr;
+    if (!md || !md->hasImage())
+        return false;
+    const QImage img = qvariant_cast<QImage>(md->imageData());
+    if (img.isNull())
+        return false;
+    QString dir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+    if (dir.isEmpty())
+        dir = QDir::tempPath() + QStringLiteral("/flare-client");
+    dir += QStringLiteral("/attachments");
+    QDir().mkpath(dir);
+    const QString path = QStringLiteral("%1/paste-%2.png")
+                             .arg(dir)
+                             .arg(QDateTime::currentMSecsSinceEpoch());
+    if (!img.save(path, "PNG"))
+        return false;
+    addAttachment(path);
+    return true;
+}
+
 void ChatWidget::addAttachment(const QString &path)
 {
     if (path.isEmpty() || !QFileInfo::exists(path))
@@ -449,29 +474,8 @@ bool ChatWidget::eventFilter(QObject *watched, QEvent *event)
     // M8: 输入框上 Ctrl+V —— 剪贴板是图片就存 png 挂成附件，否则交给 QLineEdit 走文本粘贴
     if (watched == m_input && event->type() == QEvent::KeyPress) {
         auto *ke = static_cast<QKeyEvent *>(event);
-        if (ke->matches(QKeySequence::Paste)) {
-            const QMimeData *md = QApplication::clipboard()
-                                      ? QApplication::clipboard()->mimeData()
-                                      : nullptr;
-            if (md && md->hasImage()) {
-                const QImage img = qvariant_cast<QImage>(md->imageData());
-                if (!img.isNull()) {
-                    QString dir = QStandardPaths::writableLocation(
-                        QStandardPaths::CacheLocation);
-                    if (dir.isEmpty())
-                        dir = QDir::tempPath() + QStringLiteral("/flare-client");
-                    dir += QStringLiteral("/attachments");
-                    QDir().mkpath(dir);
-                    const QString path = QStringLiteral("%1/paste-%2.png")
-                                             .arg(dir)
-                                             .arg(QDateTime::currentMSecsSinceEpoch());
-                    if (img.save(path, "PNG")) {
-                        addAttachment(path);
-                        return true; // 已作为附件处理，不再插入文本
-                    }
-                }
-            }
-        }
+        if (ke->matches(QKeySequence::Paste) && pasteImageFromClipboard())
+            return true;  // 已作为附件处理，不再插入文本
     }
     return QWidget::eventFilter(watched, event);
 }

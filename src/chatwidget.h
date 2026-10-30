@@ -37,6 +37,8 @@ public:
     // 这里暴露一个可测入口，dragEnter/drop 都走它）
     void attachLocalFiles(const QList<QUrl> &urls);
     QStringList attachments() const { return m_attachments; }
+    // 剪贴板里是图片就落盘挂成附件，返回是否已当附件处理（不是图片返回 false）
+    bool pasteImageFromClipboard();
     QString outputText() const { return m_output->toPlainText(); }
     // 用户是否已经站在最新位置（可以收起「↓ 新内容」提示）。
     // maximum 在追加内容、布局重算的瞬间可能归零——那不是「回到底部」，是范围还没算出来。

@@ -120,6 +120,40 @@
 - **ctest 在 Windows runner 上会挂死**：runner 无交互桌面会话，且用例要真起引擎子进程 → 曾挂 8 分钟以上把 `windeployqt`/打包全卡死。现在该步骤 `continue-on-error: true` + `timeout-minutes: 8` + `--timeout 45`，日志留证但不阻塞出包（Linux 本地 ctest 仍是发布闸门）。
 - 结果：`windows-build` run **41042778110 全绿**，产物 `flare-client-0.6.177-win-x64.zip`（17M，zip 完整性校验通过，含 `flare.exe` 11M 内置引擎 + Qt 运行库 + `README.txt`，无 `.lib`）；`native-windows` run **41035707576 全绿**，产物 `flare-0.6.177-win-x64-setup.exe`（NSIS 向导，3.9M）+ zip。
 
+### 0.6.178 · 空壳会话占满首屏修复 + CLI 标题回退（2026-10-30）
+- **病象**：GUI 会话列表整片空白，`flare list -n 8` 出来的全是「新会话」且无内容。
+- **病根**：真实库 1033 个会话里有 **183 个 `archived=1` 且一条消息都没有**的空壳，它们按 `updated_at DESC` 排在最前，正好占满引擎默认 `limit=20`；客户端按 M13「空会话不进列表」全部过滤 → 首屏被吃干，看起来就是空白。**850 个有内容的会话一条也没进窗**。
+- **修法**：过滤落在**引擎 SQL**（不是客户端）—— `GetRecentSessions` 加 `AND EXISTS (SELECT 1 FROM messages m1 WHERE m1.session_id = s.id)`。放引擎侧的原因：`flare list` 命令行也必须正确，客户端各自过滤会漏。配 `internal/store/recent_test.go`（98 行）钉住「空壳不得出现」。
+- **顺带修 CLI 标题**：库里 `title` 大量是占位值「新会话」 → `runList` 在 title 为空或等于占位值时回退**首条用户消息前 40 字**（`truncRunes`/`oneLine` 保证单行不撑行）。
+- **验证**：引擎 `go build ./... && go test ./...` 全绿；装机后 `flare list -n 8` 输出真实标题。
+
+### 0.6.179 · 会话列表分页 + CLI 时间裸 UTC 修复（2026-10-30）
+- **分页**：修完空壳后列表只剩 7 条 —— 因为客户端 `recentSessions()` **从不传 `limit`**。六处 PATCH：`engine-bridge` 的 `recentSessions(int limit = 0)`（`limit > 0` 才写进请求帧）、`SessionListWidget` 的 `m_recentLimit`（初始 20）/`m_hasMoreRecent`/`m_fetchingMore`（防重入）、`refresh()` 带上 limit、回包分支判「回包条数 < limit 即到底」、`showRecent()` 重置 20、`applySessions()` 存/还原滚动位置。
+- **交互口径**：滚到底阈值 `v >= sb->maximum() - 4` 自动 +40 重拉；**搜索结果视图不翻页**；切回主视图重置为 20。引擎侧确认 `recent_sessions` 对 limit **不设上限**（`server.go`），所以抬到 184 也不会被截。
+- **CLI 时间**：`flare list` 显示 `06:36` 而本机 `date` 是 `19:19` —— 库里存的是 `datetime('now')` 裸 UTC，CLI 直接打印。加 `localStamp()` 转本地，实测打印回到 `14:36`（+8 正确）。
+- **验证**：`build-fedora.sh -p` 出口 0，装机 `rpm -q` = `flare-client-0.6.179-1.x86_64`，包内引擎 `flare --version` = `flare 0.6.179 (go)`。
+
+### 0.6.180 · 分页客观验收 + 回收站端到端验证（2026-10-30）
+- **分页验收（不看截图，看数字）**：`src/main.cpp` 加 `--scroll-bottom`（`QTimer::singleShot(700*k, ...)`，k=1..4）与 `LIST_ITEMS=N` + `ITEM[i]=<text>` 到 stderr 的埋点。生产二进制实测：首屏 **22**（20 会话 + 2 分组标题）→ 滚到底 **184**（180 会话 + 4 分组），每次触底 +40，共 4 次。
+- **一个假 bug 的教训**：中途「滚到底列表变空」被当成分页 bug 查了半天，根因是 dev 构建命中了 `build-fedora/flare`（10:12 的旧引擎，没有 `EXISTS` 修复）。修法：`cp -f /tmp/flare-dev build-fedora/flare`，取证一律用 `FLARE_ENGINE_BIN=/tmp/flare-dev` 显式钉死引擎。
+- **回收站端到端**：**不写真实用户库**，`FLARE_DB=/tmp/trash.db` 建三条夹具 —— s1（archived + 有消息）/ s2（正常）/ s3（archived + 无消息）。实测 `--view archived` → `LIST_ITEMS=1`（s1 出现、s3 按 M13 被过滤），最近视图 → `LIST_ITEMS=2`。
+- **生产 archived 显示 0 项不是 bug**：183 个 archived 全是无消息空壳，被 `EXISTS` 正确过滤；只有「archived 且有过消息」才该进回收站。
+- **vision 判定不可靠，已定纪律**：`vision_analyze` 说回收站截图「看不到内容」，但 PIL 像素统计显示左侧 0..280 列有 **500+ 深色文字像素**（确实渲染了），且 `ITEM[i]` 文本全对。**今后条数一律以程序输出为准，vision 只用于「有没有内容」这种模糊判断。**
+- 客户端 ctest **14/14**；双仓 push（引擎 `7223b56` / 客户端 `f6f4554`）。
+
+### 0.6.181 · 关闭收托盘/粘贴图片真机实证 + 三个自检开关（2026-10-30）
+- **动因**：Hermes 进程 `DISPLAY`/`WAYLAND_DISPLAY` 全空，**没法从外部驱动真实桌面**；Wayland 下 `xdotool`/`import`/KWin DBus 一律无效。所以把验证做进二进制里，零外部依赖、可 CI 复用、将来另两端复刻也有对照基准：
+  - `--system-check`：**不弹窗口**，打印 `qt_platform` / `session_type` / `desktop` / `tray_available` / `messages_available` / `close_will` / `app_dir` / `engine_override`。托盘可用性查代码判断不出来，必须问系统。
+  - `--close-test`：800ms 后调 `w.close()`（**走的是和用户点标题栏 × 完全同一条 `closeEvent`**），打印关闭前后的 `visible`/`tray`，2200ms 后 `app.exit(0)` 免得给用户桌面留托盘图标。
+  - `--paste-test`：往剪贴板塞一张 160×100 主题紫图，走真实粘贴入口，打印 `PASTE_HANDLED` / `ATTACH_COUNT` / 每个附件的文件名+存在性+字节数。
+- **顺手重构**：把埋在 `eventFilter` 里的剪贴板图片处理抽成 `ChatWidget::pasteImageFromClipboard()`，键盘 Ctrl+V 与自检调**同一份逻辑**，杜绝两条路径漂移。
+- **真机 KDE Plasma 6 Wayland 实测（生产 RPM 装的 `/usr/bin/flare-client`）**：
+  - `tray_available=yes` / `messages_available=yes` / `close_will=hide_to_tray` → 「关闭窗口不退出」走收托盘，且气泡通知可用（不是静默消失）。
+  - `BEFORE_CLOSE visible=1 tray=1` → `AFTER_CLOSE visible=0 tray=1 still_running=1`：窗口藏起、托盘图标仍在、进程保活，用户找得回来。无托盘时降级为原地最小化 + 状态栏提示。
+  - `PASTE_HANDLED=1 ATTACH_COUNT=1` / `ATTACH=paste-1793362708366.png exists=1 bytes=337`：剪贴板真图片落盘成 `paste-<毫秒>.png` 并挂成附件，chip 上能认出是哪张。
+- 客户端 ctest **14/14**（改了 `eventFilter` 结构后回归）；装机 0.6.181，包内引擎 `flare 0.6.181 (go)` 与客户端版本对齐。
+- **注**：生产自检里 `session_type=` / `desktop=` 为空，是 Hermes 进程本身没导出 `XDG_SESSION_TYPE`/`XDG_CURRENT_DESKTOP`（只注入了 `WAYLAND_DISPLAY`），不是客户端缺陷。
+
 
 ## 构建命令（每轮必须执行）
 
