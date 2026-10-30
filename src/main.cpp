@@ -178,30 +178,67 @@ int main(int argc, char *argv[])
         if (viewArg.compare(QLatin1String("archived"), Qt::CaseInsensitive) == 0 && w.sessions())
             w.sessions()->showArchived();
         QListWidget *lw = w.sessions() ? w.sessions()->findChild<QListWidget *>() : nullptr;
-        if (scrollBottom && lw) {
-            // 连续滚到底四次：每次触底都会把分页上限抬高并重新拉取，
-            // 用来验证「老会话翻得到」而不是只有首屏 20 条
-            for (int k = 1; k <= 4; ++k) {
-                QTimer::singleShot(700 * k, lw, [lw]() {
-                    lw->verticalScrollBar()->setValue(lw->verticalScrollBar()->maximum());
-                });
-            }
-        }
-        // 等 2.5s 让欢迎词呼吸动画进入可见帧，再抓取（分页模式要多等几轮）
-        QTimer::singleShot(scrollBottom ? 6000 : 2500, &w, [&, lw]() {
-            // 分页验证要看得见「条数」，光看截图数不过来
+
+        // 取证口径：等「列表数据真的落地」再抓图，不再猜固定延时。
+        // 分页模式（--scroll-bottom）每落地一次就再滚到底，直到条数不再增长。
+        bool grabbed = false;
+        auto snap = [&](const char *why) {
+            if (grabbed)
+                return;
+            grabbed = true;
             if (lw) {
-                fprintf(stderr, "LIST_ITEMS=%d\n", lw->count());
+                fprintf(stderr, "LIST_ITEMS=%d shot_reason=%s\n", lw->count(), why);
                 // 条数对了但画面空过 → 逐项把文本打出来，判断是「没数据」还是「没渲染」
                 const int n = lw->count() < 25 ? lw->count() : 25;
                 for (int i = 0; i < n; ++i)
                     fprintf(stderr, "ITEM[%d]=%s\n", i,
                             qPrintable(lw->item(i)->text().simplified().left(60)));
             }
+            fflush(stderr);
             const QPixmap pm = w.grab();
             pm.save(shotPath);
             QFile::exists(shotPath) ? app.exit(0) : app.exit(2);
-        });
+        };
+
+        // 硬兜底：引擎不回包（崩了/卡住）也必须留下证据并退出，不能挂在这里
+        QTimer::singleShot(15000, &w, [snap]() { snap("timeout"); });
+
+        if (!w.sessions()) {
+            QTimer::singleShot(2500, &w, [snap]() { snap("no-session-widget"); });
+            return app.exec();
+        }
+
+        int applies = 0;
+        int lastCount = -1;
+        int stalls = 0;
+        // 翻到最早一条后就不会再有回包了 —— 用「静默计时器」判定到底，
+        // 否则只能等 15s 硬兜底（引擎快反而是浪费）。
+        auto *settle = new QTimer(&w);
+        settle->setSingleShot(true);
+        settle->setInterval(1200);
+        QObject::connect(settle, &QTimer::timeout, &w, [snap]() { snap("settled"); });
+        QObject::connect(w.sessions(), &SessionListWidget::sessionsApplied, &w,
+                         [&, lw, snap, settle](int n) {
+                             ++applies;
+                             if (scrollBottom) {
+                                 // 触底会抬高分页上限并重拉；先等布局把滚动条最大值算出来
+                                 QTimer::singleShot(60, &w, [lw]() {
+                                     if (lw)
+                                         lw->verticalScrollBar()->setValue(
+                                                 lw->verticalScrollBar()->maximum());
+                                 });
+                                 // 条数不再增长（连续两次）说明已经翻到最早一条
+                                 n == lastCount ? ++stalls : stalls = 0;
+                                 lastCount = n;
+                                 if (stalls >= 2 || applies >= 30)
+                                     QTimer::singleShot(400, &w, [snap]() { snap("paged"); });
+                                 else
+                                     settle->start();
+                             } else {
+                                 // 非分页：数据落地后留 350ms 让欢迎词呼吸动画进入可见帧
+                                 QTimer::singleShot(350, &w, [snap]() { snap("applied"); });
+                             }
+                         });
         return app.exec();
     }
 

@@ -167,6 +167,33 @@
 - 同轮补真机回归：真实用户库首屏 `LIST_ITEMS=22`，22 条全部可辨识内容，**0 个「新会话」**；图片会话显示 `[图片] 图中写着什么？…`（`MediaTags` 生效）；分组「今天 / 昨天」与本地时间（14:36、10-29）正确 → 诉求 #1「列表项名称要能看出会话内容」闭环。
 - 生产模式四项自检（`--system-check` / `--close-test` / `--paste-test` / `--workdir-test`）全通过；`ctest 14/14`。
 
+## 0.6.183 — 取证不再靠猜延时 + 标题/预览去重
+
+**病象**
+1. `--screenshot` 取证用固定延时（首屏 2.5s、`--scroll-bottom` 6s）：引擎再快也要干等 2.5 秒；引擎慢一点就抓到空列表，取证结论只能靠运气。
+2. 引擎把占位标题（「新会话」）回退成首条用户消息之后，GUI 列表项变成「用一句话介绍你自己 用一句话介绍你自己 · 14:36」——同一句话写两遍。
+
+**病根**
+1. 取证脚本自己猜「引擎该回包了」，没有监听「数据真的落地」这件事。
+2. 回退落点从 CLI 搬到引擎读路径后，客户端展示层还在无条件「主行标题 + 副行预览」。
+
+**修法**
+1. `SessionListWidget` 新增 `sessionsApplied(int sessionCount)` 信号，在 `applySessions` 末尾触发；`--screenshot` 改为：首屏等第一次回包后留 350ms（让欢迎词呼吸动画进入可见帧）即抓；分页模式每落地一次就滚到底，连续 1.2s 无新回包判为「翻到最早一条」再抓；仍保留 15s 硬兜底，保证引擎崩了也能留下证据并退出。
+2. `sameFactText()`：标题与预览「互为首缀」即视为同一事实，副行只留时间戳，全文仍在 tooltip 里。只做字符串判定，不猜语义、不改协议。
+
+**双证（dev 引擎 / 生产 0.6.183 包，真实库 850 条可见会话）**
+| 项目 | dev | 生产 |
+|---|---|---|
+| 首屏条数 | `LIST_ITEMS=22 shot_reason=applied` | `LIST_ITEMS=22 shot_reason=applied` |
+| 「新会话」占位 | 0 | 0 |
+| 首屏耗时 | ~0.5s（原固定 2.5s） | 0.514s |
+| 分页到底 | `LIST_ITEMS=852 shot_reason=settled` 3.2s | `LIST_ITEMS=852 shot_reason=settled` 3.098s |
+| 包内引擎 | — | `flare 0.6.183 (go)` |
+
+**测试**：`go test ./...` 全绿（新增 `internal/store/title_test.go` 覆盖三个标题出口）；`gofmt` / `go vet ./...` 干净；`ctest` 14/14。
+
+**引擎侧配套（`83d3cbc`）**：新增 `internal/content`（`Facts`/`OneLine`/`SessionTitle` 只有一份实现），`store` 三个出口在 SQL 里取 `first_user_msg` 并在出口派生标题，`cmd/flare runList` 不再自写回退。引擎只给语言中立事实（`text` + `kinds`），不往协议或库里写「[图片]」「[附件]」。
+
 ## 构建命令（每轮必须执行）
 
 ```bash

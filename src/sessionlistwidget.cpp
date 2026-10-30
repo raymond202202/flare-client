@@ -63,6 +63,18 @@ static QString previewLabel(const QJsonObject &s)
 // M15-3：解析与格式统一交给 FlareTime —— 引擎给的是 RFC3339 UTC，老数据可能
 // 是 sqlite 的裸串（无时区标记但本身就是 UTC）。以前这里直接 Qt::ISODateWithMs
 // 解析，裸串被当成本地时间，刚聊完的会话显示成 8 小时前。
+// 标题与预览是不是同一个事实？引擎对占位标题（「新会话」）会用首条用户消息顶替，
+// 于是 GUI 拿到的 title 与 preview 内容相同，或 title 恰是 preview 的定长截断。
+// 判据只做「互为首缀」，不猜语义。
+static bool sameFactText(const QString &title, const QString &preview)
+{
+    const QString a = title.simplified();
+    const QString b = preview.simplified();
+    if (a.isEmpty() || b.isEmpty())
+        return false;
+    return a == b || b.startsWith(a) || a.startsWith(b);
+}
+
 QString SessionListWidget::shortStamp(const QString &iso, const QDateTime &now)
 {
     return FlareTime::listStamp(iso, now);
@@ -488,7 +500,9 @@ void SessionListWidget::applySessions(const QJsonArray &sessions)
         QString secondLine;
         if (!isPlaceholderTitle(title)) {
             mainText = elidePx(title, itemFont, mainW);
-            if (!preview.isEmpty()) {
+            // 引擎把占位标题回退成首条消息之后，标题与预览常常是同一句话。
+            // 副行再复述一遍就是噪音，这时副行只留时间（全文仍在 tooltip 里）。
+            if (!preview.isEmpty() && !sameFactText(title, preview)) {
                 const QString tail = stamp.isEmpty()
                         ? QString()
                         : QStringLiteral("  ·  ") + stamp;
@@ -547,6 +561,8 @@ void SessionListWidget::applySessions(const QJsonArray &sessions)
     // 还原滚动位置（重建列表会把滚动条打回顶部）
     if (prevScroll > 0)
         m_list->verticalScrollBar()->setValue(prevScroll);
+
+    emit sessionsApplied(count());
 }
 
 int SessionListWidget::count() const

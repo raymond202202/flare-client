@@ -77,6 +77,9 @@ public slots:
     void purgeCurrent();     // M8 回收站：彻底删除（delete_session，不可恢复）
 
 signals:
+    // 列表数据已落地（每次 applySessions 结束触发）。
+    // 取证/自检用它替代「等固定秒数再截图」：引擎快就早抓、慢就等，不再靠猜延时。
+    void sessionsApplied(int sessionCount);
     // 用户点选某个会话（携带协议 sessionId）
     void sessionSelected(const QString &sessionId);
     // 用户点击「记忆」入口
