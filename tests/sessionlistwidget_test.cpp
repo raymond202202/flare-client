@@ -47,6 +47,8 @@ private slots:
     void sessionsGroupedByDay();
     void searchViewHasNoSectionHeaders();
     void shortStampKeepsYearAcrossYears();
+    void keyboardNavSwitchesSessionAndSkipsHeaders();
+    void searchBoxArrowDownJumpsToList();
 };
 
 static bool flareAvailable()
@@ -304,6 +306,65 @@ void SessionListWidgetTest::shortStampKeepsYearAcrossYears()
     // 非法时间不崩，退化成日期前缀
     QCOMPARE(SessionListWidget::shortStamp(QStringLiteral("2026-13-99"), now),
              QStringLiteral("2026-13-99"));
+}
+
+
+// M14: 键盘 ↑/↓ 必须真的切会话，而且不能停在「今天」「昨天」这种分组标题上
+// （标题行是 NoItemFlags，QListWidget 的键盘导航本来会跳过它，这里把它钉成契约）
+void SessionListWidgetTest::keyboardNavSwitchesSessionAndSkipsHeaders()
+{
+    EngineBridge bridge;
+    SessionListWidget w(&bridge);
+
+    const QDateTime now = QDateTime::currentDateTime();
+    const auto iso = [](const QDateTime &dt) { return dt.toString(Qt::ISODateWithMs); };
+    QJsonArray arr;
+    arr.append(QJsonObject{{"id", "s-today"}, {"title", "今天聊的"}, {"updatedAt", iso(now)}});
+    arr.append(QJsonObject{{"id", "s-yest"}, {"title", "昨天聊的"}, {"updatedAt", iso(now.addDays(-1))}});
+    arr.append(QJsonObject{{"id", "s-old"}, {"title", "很久以前"}, {"updatedAt", iso(now.addDays(-40))}});
+    w.onEngineEvent(QJsonObject{{"type", "sessions"}, {"sessions", arr}});
+
+    // 三个分组标题把三个会话隔开，正好试「跨组下移」
+    QCOMPARE(w.count(), 3);
+    w.list()->setCurrentItem(w.sessionItem(0));
+    QCOMPARE(w.currentSessionId(), QString("s-today"));
+
+    QSignalSpy spy(&w, &SessionListWidget::sessionSelected);
+    w.list()->setFocus();
+    QTest::keyClick(w.list(), Qt::Key_Down);
+
+    QVERIFY2(spy.count() >= 1, "按 ↓ 之后没有任何 sessionSelected —— 键盘只动了高亮没切会话");
+    QCOMPARE(spy.last().at(0).toString(), QString("s-yest"));
+    // 落到分组标题上就等于「选中了个寂寞」，必须直接是下一个真会话
+    QCOMPARE(w.currentSessionId(), QString("s-yest"));
+
+    // 同一项上再按一次，不该把已打开的会话重新加载一遍
+    const int before = spy.count();
+    QTest::keyClick(w.list(), Qt::Key_Down);
+    QCOMPARE(spy.count(), before + 1);
+}
+
+// M14: 在搜索框里敲完关键字，按 ↓ 应该能直接进结果，不用再摸鼠标
+void SessionListWidgetTest::searchBoxArrowDownJumpsToList()
+{
+    EngineBridge bridge;
+    SessionListWidget w(&bridge);
+
+    const QDateTime now = QDateTime::currentDateTime();
+    QJsonArray arr;
+    arr.append(QJsonObject{{"id", "r-1"}, {"title", "报错怎么读"},
+                           {"updatedAt", now.toString(Qt::ISODateWithMs)}});
+    w.onEngineEvent(QJsonObject{{"type", "sessions"}, {"sessions", arr}});
+    QCOMPARE(w.count(), 1);
+
+    QSignalSpy spy(&w, &SessionListWidget::sessionSelected);
+    w.searchBox()->setFocus();
+    QTest::keyClick(w.searchBox(), Qt::Key_Down);
+
+    QVERIFY2(w.list()->currentItem() != nullptr, "在搜索框按 ↓ 没有把选中落到列表上");
+    QCOMPARE(w.currentSessionId(), QString("r-1"));
+    QCOMPARE(spy.count(), 1);
+    QCOMPARE(spy.at(0).at(0).toString(), QString("r-1"));
 }
 
 QTEST_MAIN(SessionListWidgetTest)

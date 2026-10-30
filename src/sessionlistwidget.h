@@ -60,6 +60,8 @@ public:
     static QString shortStamp(const QString &iso, const QDateTime &now);
     // M8: 本地别名（该会话首条消息的片段）—— 引擎 title 是占位值时用它，让名字有意义
     void setLocalAlias(const QString &sessionId, const QString &text);
+    // M14: 最近一次「已通知宿主」的会话 id（键盘/鼠标共用一条去重路径）
+    QString navEmittedId() const { return m_navEmittedId; }
 
 public slots:
     void onEngineEvent(const QJsonObject &event);
@@ -96,6 +98,8 @@ private slots:
     void onArchiveClicked();
     void onItemChanged(QListWidgetItem *item);
     void onContextMenuRequested(const QPoint &pos);
+    // M14: 选中项变化（键盘 ↑↓ / 鼠标点击 / 程序化 setCurrentItem 都走这里）
+    void onCurrentItemChanged(QListWidgetItem *cur, QListWidgetItem *prev);
 
 private:
     void applySessions(const QJsonArray &sessions);
@@ -129,9 +133,13 @@ private:
     bool m_suppressItemChanged = false;
     QString m_renamingId;
     QString m_renamingOriginal;
+    // M14: 已经告诉宿主的会话 id —— 光标在同一项上反复经过不该重新加载一次会话
+    QString m_navEmittedId;
 
 protected:
     void resizeEvent(QResizeEvent *event) override;
+    // M14: 搜索框里按 ↑/↓ 直接把焦点交给列表
+    bool eventFilter(QObject *watched, QEvent *event) override;
 };
 
 #endif // SESSIONLISTWIDGET_H

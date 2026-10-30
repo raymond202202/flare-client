@@ -12,6 +12,7 @@
 #include <QToolTip>
 #include <QMessageBox>
 #include <QPoint>
+#include <QKeyEvent>
 
 // 侧边栏固定宽度（简洁轻量）
 static constexpr int kSidebarWidth = 220;
@@ -224,6 +225,12 @@ SessionListWidget::SessionListWidget(EngineBridge *bridge, QWidget *parent)
     connect(m_skillBtn, &QPushButton::clicked, this, &SessionListWidget::skillRequested);
     connect(m_settingsBtn, &QPushButton::clicked, this, &SessionListWidget::settingsRequested);
     connect(m_list, &QListWidget::itemClicked, this, &SessionListWidget::onItemClicked);
+    // M14: 键盘 ↑/↓ 也要真的切会话 —— 只连 itemClicked 的话，方向键只动高亮不动内容，
+    // 看起来像「列表坏了」。currentItemChanged 覆盖键盘、鼠标、程序化三种来源。
+    connect(m_list, &QListWidget::currentItemChanged,
+            this, &SessionListWidget::onCurrentItemChanged);
+    // 搜索框里敲完字按 ↓ 直接进结果列表，不用再摸鼠标
+    m_searchBox->installEventFilter(this);
     // M7-2
     connect(m_searchBox, &QLineEdit::textChanged, this, &SessionListWidget::onSearchChanged);
     connect(m_archiveBtn, &QPushButton::clicked, this, &SessionListWidget::onArchiveClicked);
@@ -790,6 +797,7 @@ void SessionListWidget::onCreateClicked()
     if (m_bridge)
         m_bridge->createSession(id, QStringLiteral("新会话"));
     // 立即选中并告知主窗口（服务端 ok 后 refresh 会保留选中）
+    m_navEmittedId = id;
     emit sessionSelected(id);
 }
 
@@ -807,5 +815,46 @@ void SessionListWidget::onItemClicked(QListWidgetItem *item)
     const QString picked = item->data(kRoleId).toString();
     if (picked.isEmpty())   // 分组标题行
         return;
+    // 正常情况下这一下点击已经先触发 currentItemChanged 通知过宿主了；
+    // 只有「点的是本来就选中的那一项」时 currentItemChanged 不会来，这里补一次。
+    if (picked == m_navEmittedId)
+        return;
+    m_navEmittedId = picked;
     emit sessionSelected(picked);
+}
+
+// M14: 选中项变了就切会话（键盘 ↑/↓、鼠标点击、程序化 setCurrentItem 共用）
+void SessionListWidget::onCurrentItemChanged(QListWidgetItem *cur, QListWidgetItem *prev)
+{
+    Q_UNUSED(prev);
+    if (!cur)
+        return;
+    rebuildMenu();
+    const QString id = cur->data(kRoleId).toString();
+    if (id.isEmpty())    // 分组标题行不是会话
+        return;
+    if (id == m_navEmittedId)   // 同一个会话反复进过这里，不重复加载
+        return;
+    m_navEmittedId = id;
+    emit sessionSelected(id);
+}
+
+// M14: 搜索框按 ↑/↓ → 焦点交给列表并落到最后一个/第一个真会话
+bool SessionListWidget::eventFilter(QObject *watched, QEvent *event)
+{
+    if (watched == m_searchBox && event->type() == QEvent::KeyPress) {
+        auto *ke = static_cast<QKeyEvent *>(event);
+        if (ke->key() == Qt::Key_Down || ke->key() == Qt::Key_Up) {
+            if (count() == 0)
+                return true;    // 一条结果都没有，就别把焦点扔进空列表
+            QListWidgetItem *target = (ke->key() == Qt::Key_Down)
+                    ? sessionItem(0) : sessionItem(count() - 1);
+            if (!target)
+                return true;
+            m_list->setCurrentItem(target);
+            m_list->setFocus(Qt::OtherFocusReason);
+            return true;        // 别让 QLineEdit 把它吃成光标移动
+        }
+    }
+    return QWidget::eventFilter(watched, event);
 }
