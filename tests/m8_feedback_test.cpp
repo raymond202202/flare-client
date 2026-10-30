@@ -46,6 +46,7 @@ private slots:
     void windowGeometryPersisted();
     void shortcutFocusSearch();
     void shortcutNewSession();
+    void closeHidesButDoesNotQuit();
 };
 
 // 1) 列表项：主标题 + 第二行 preview+时间；无标题时用 preview 当主标题
@@ -347,6 +348,31 @@ void M8FeedbackTest::shortcutNewSession()
     QVERIFY(w.isVisible());
     QVERIFY2(w.sessions()->searchBox() != nullptr, "Ctrl+N 后会话列表结构被破坏");
     QVERIFY(w.sessions()->count() >= 0);
+}
+
+// ---- 5) 关窗不退出：窗口收起（托盘 / 任务栏），进程与对话上下文都还在 ----
+void M8FeedbackTest::closeHidesButDoesNotQuit()
+{
+    MainWindow w;
+    w.show();
+    QTest::qWait(30);
+    QVERIFY(w.isVisible());
+
+    // closeEvent 必须 ignore：close() 返回 false == 「关闭被拒绝」，
+    // 窗口没进关闭状态、没被销毁，正在跑的对话也不会丢
+    // （用户反馈：误关一次上下文就没了，所以关窗只能收起来）
+    QVERIFY2(w.close() == false, "关窗被直接接受 → 会连带退出，对话上下文丢失");
+    QTest::qWait(40);
+
+    // 有托盘 → hide()；没有托盘（部分 Wayland 会话）→ showMinimized()。
+    // 两条路都算「还在运行」，但绝不能什么迹象都没有。
+    QVERIFY2(w.isHidden() || w.isMinimized(),
+             "关窗后窗口既没收起也没最小化，用户看不到「还在运行」的迹象");
+
+    // 还能被叫回来，否则等于变相退出
+    w.showNormal();
+    QTest::qWait(20);
+    QVERIFY2(w.isVisible(), "收起后无法恢复窗口，等于把用户锁在门外");
 }
 
 QTEST_MAIN(M8FeedbackTest)
