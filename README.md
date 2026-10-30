@@ -1,53 +1,282 @@
-# Flare Client — AI Agent 桌面客户端
+# Flare Client — Flare 的桌面客户端
 
-Flare 是通用能力 AI Agent（TypeScript CLI）的三平台原生 GUI 客户端。
+Flare 是一个能自己动手做事的 AI 助手：你说话，它调工具干活——读文件、跑命令、查资料、写代码。
+**Flare Client** 是它的图形界面，双击即用，**不需要安装 Node.js，不需要记命令行参数**。
 
-- **技术栈**：Qt 6 Widgets（C++17 / CMake），三平台统一
-- **平台**：Fedora Linux / macOS / Windows
-- **架构**：客户端与 flare 主项目（CLI）解耦，通过 JSON Lines 子进程协议通信
-- **开发方法**：TDD（CTest + QtTest），每个里程碑有验收清单
+- **前端**：Qt 6 Widgets（C++17 / CMake），Fedora Linux 打磨样板
+- **后端**：Go 引擎（[`raymond202202/flare`](https://github.com/raymond202202/flare)），单体静态编译，零运行时依赖
+- **通信**：客户端把引擎作为子进程拉起，通过 **JSON Lines over stdio** 交换消息，不共享内存、不共享数据库连接
+- **数据**：直接读写 `~/.flare/flare.db`（SQLite），与 CLI 版同源，装完就能看到以前的会话
 
-## 目录结构
+---
+
+## 一、平台支持状态
+
+| 平台 | 壳 | 安装包 | 真机验证 |
+|---|---|---|---|
+| **Fedora Linux**（x86_64） | Qt 6 | `.rpm` / `.deb` | ✅ 已逐版打磨并截图核验，**样板平台** |
+| Windows（x64 / arm64） | WPF（.NET，`native/windows`） | `setup.exe`（NSIS） | ⚠️ 可构建、装机流程已通，**尚未在真机逐项复验** |
+| macOS（arm64） | Swift / AppKit（`native/macos`） | `.pkg` | ⚠️ 可构建，**尚未在真机逐项复验** |
+
+> 平台差异只体现在「外壳」上；三种壳调用的是**同一个 Go 引擎、同一套 JSON 协议**，所以行为一致。Windows/macOS 壳目前的打磨进度落后于 Fedora，功能对齐中。
+
+---
+
+## 二、两种安装包：别下错
+
+Flare 的交付物是**双包制**，同一个版本会出两个包：
+
+| 包名 | 是什么 | 谁该装 |
+|---|---|---|
+| `flare-engine-<版本>-*` | **纯引擎**：只有 `flare` 一个可执行文件，纯命令行 | 想用终端/脚本/服务器上跑，自己接自己的前端 |
+| `flare-client-<版本>-*` | **GUI 包**：图形客户端 **已内置引擎**，两者同目录 | **普通用户装这个**，双击向导装完就能聊天 |
+
+要点：
+
+- GUI 包里已经带引擎，用户**不用另外装引擎、不用管版本号匹配**——引擎版本随客户端版本一起走。
+- 两个包可以共存：GUI 包把引擎放在自己的私有目录（Fedora 下是 `/usr/lib64/flare-client/flare`），不抢占系统 `PATH`。
+- 安装包内**不含任何 API Key**，只有一份空模板 `env.example`。
+
+---
+
+## 三、安装
+
+### Fedora / 其他 rpm、deb 系
+
+```bash
+# 优先用 dnf：自动解决依赖（Qt6 运行库）
+sudo dnf install ./flare-client-<版本>-1.fc<NN>.x86_64.rpm
+
+# deb 系
+sudo apt install ./flare-client_<版本>_amd64.deb
+```
+
+装完在**应用菜单**里找 **Flare**，或终端执行 `flare-client`。
+
+- 安装到系统的位置：程序 `/usr/lib64/flare-client/`，入口软链 `/usr/bin/flare-client`，桌面项 `flare-client.desktop`。
+- 卸载：`sudo dnf remove flare-client`。**卸载不会删除你的会话数据**（数据在 `~/.flare/`）。
+- 升级：直接装新版 rpm（`dnf reinstall` 亦可），配置与会话全部保留。
+
+### Windows
+
+双击 `flare-client-<版本>-win-x64-setup.exe`，向导式安装：
+
+- 装到**用户目录**，**不弹 UAC、不需要管理员权限**
+- 自带开始菜单项与桌面快捷方式；卸载走「应用和功能」
+- 不写系统级注册表项，不影响同机其他软件
+
+### macOS
+
+双击 `flare-client-<版本>-arm64.pkg` 走系统安装向导。首次启动若被 Gatekeeper 拦，右键 →「打开」。
+
+### 首次启动必须做的一件事：填 API Key
+
+**没有 Key 时界面不会谈出一个打断式的弹窗**，而是状态栏常驻一条：
+
+> ⚠️ 还没填 API Key · 点这里设置
+
+点它直接打开设置面板；填好保存后提示**自动消失**，状态栏改显示当前模型（如 `deepseek-chat · deepseek`）。
+下一轮对话即生效，**不需要重启客户端**。
+
+---
+
+## 四、功能详解
+
+### 1) 会话列表
+
+- **每条会话两行**：第一行是标题，第二行是**这段对话第一句人话**的摘要（自动清洗：结构化/多模态帧不会显示成 JSON 乱码，超长按**像素**截断加省略号，绝不把侧栏撑成多行）。
+- 新会话还没说话时不给标题，说话后自动取首句；也可以自己命名。
+- **置顶**：右键「📌 置顶会话」，置顶项标题前带 📌，重启后仍然置顶。
+- **重命名**：双击某条会话即可改名；等价于右键「✏️ 重命名会话」。
+- 本地别名**离线生效**——改完立刻显示，不依赖引擎回包。
+- 列表为空时给出空状态提示，不会只剩一片空白。
+
+### 2) 右键菜单（会话上右键）
+
+| 菜单项 | 作用 |
+|---|---|
+| 📌 置顶会话 / 取消置顶 | 钉到列表顶部 |
+| ✏️ 重命名会话 | 改显示名 |
+| 🗑️ 移入回收站 | **软删除**，可恢复 |
+| 📦 归档到归档箱 | 从最近列表收进归档箱，不删除 |
+| 🧹 清空会话消息 | 保留会话壳、清掉历史消息 |
+| 🗑️ 打开回收站 / 📂 返回最近会话 | 在两种视图间切换 |
+
+### 3) 回收站（误删可救）
+
+删除是**软删除**：移入回收站后仍可救回。
+
+- 标题行常驻 **🗑️ 回收站** 按钮（归档视图里变成 **← 返回会话**），任何时候都能进出。
+- 在回收站里右键：**↩️ 恢复到最近会话**、**❌ 彻底删除（不可恢复）**。
+- 彻底删除是唯一不可逆操作，会**二次确认**：「彻底删除后无法恢复，确定要删除这个会话吗？」
+- 回收站为空时提示：「回收站是空的，在会话上右键即可移入回收站」。
+
+### 4) 归档箱
+
+把处理完的会话收进归档箱，最近列表保持干净；归档箱里的会话可以恢复到最近会话，也可以直接删除。归档视图与最近视图各自缓存，来回切换不串数据。
+
+### 5) 工作目录
+
+底部 **📂 工作目录：默认** 按钮——选一个目录后，后续这轮对话的**工具调用（读写文件、跑命令）都以它为根**。
+
+- 选中后按钮显示目录名（如 `📂 我的项目`），tooltip 显示完整路径
+- 选择会持久化，下次启动仍然生效
+- 路径不存在或不可读时会**先校验再起引擎**，不会让引擎在错误的目录里瞎跑
+
+### 6) 附件与图片
+
+- **📎 选本地文件**：把文件路径作为附件随消息发送（引擎侧直接读原文件）
+- **Ctrl+V 粘贴图片**：截图直接进对话，不需要先存盘再上传
+- 已选附件在输入框上方以 chip 形式列出，可单个移除
+
+### 7) 输入与发送
+
+- **Enter 发送**；输入法拼字过程中按 Enter 不会误发（已处理 IME 组合态）
+- 输入框占位提示：`输入消息，Enter 发送 · Ctrl+V 粘贴图片 · 📎 选本地文件`
+- 引擎报错不会静默：以「⚠️ Flare」气泡直接出现在对话里，用户看得见
+
+### 8) 记忆面板
+
+侧栏「记忆」——查看/编辑 Flare 长期记住的内容（跨会话生效的偏好与事实）。
+
+### 9) 技能与工具面板
+
+侧栏「技能」——查看当前可用的技能与工具清单，了解它能干什么。
+
+### 10) 版本与更新检查
+
+底部版本按钮打开版本面板，可**分别**检查：
+
+- **客户端**是否有新版
+- **内核（引擎）**是否有新版
+
+两者独立比对，避免「客户端更新了但引擎还是旧的」这种错配。
+
+### 11) 状态栏
+
+| 位置 | 内容 |
+|---|---|
+| 左 | 运行态提示、保存结果（如「API Key 已保存，下一轮对话即生效」） |
+| 中 | 模型行：`<模型> · <提供商>`，如 `deepseek-chat · deepseek` |
+| 右 | 内核版本，如 `v0.6.164` |
+
+### 12) 关闭窗口 ≠ 退出
+
+- 点窗口关闭按钮 → **收进托盘**（并弹一次「Flare 还在运行」提示）。避免误关一次丢掉上下文。
+- 托盘图标单击恢复窗口；托盘右键菜单：「显示主窗口」「退出 Flare」。
+- **只有托盘菜单里的「退出 Flare」才真正退出进程**。
+- 没有系统托盘的环境下退化为最小化，并在状态栏提示「Flare 仍在运行（窗口已最小化）」。
+
+---
+
+## 五、架构
+
+```
+┌──────────────────────┐        JSON Lines over stdio        ┌─────────────────────┐
+│  GUI 壳（Qt / WPF /  │ ──────────────────────────────────▶ │  flare 引擎（Go）    │
+│  AppKit）            │ ◀────────────────────────────────── │  单文件静态编译      │
+└──────────────────────┘        new_session / send / …       └─────────────────────┘
+        │                                                              │
+        │ 只管渲染与交互                                                │ SQLite
+        ▼                                                              ▼
+   Qt 控件 / 列表 / 气泡                                        ~/.flare/flare.db
+```
+
+**分工铁律**
+
+- 壳**不实现** Agent 逻辑：不拼 prompt、不调模型、不管工具循环——这些全在引擎里。
+- 壳**不接管**引擎的配置文件，只做两件事：起进程（带工作目录）、读一行行 JSON 渲染。
+- 唯一例外是「是否已配置 API Key」这一个**只读判断**（用于状态栏提示），其解析规则与引擎的 `.env` 解析逐条对齐（忽略 `export ` 前缀、去引号、空值/纯注释不算），避免「引擎能跑、界面说没配」。
+
+### 目录结构
 
 ```
 flare-client/
-├── src/            # Qt 主程序（聊天 UI / 设置）
-├── engine-bridge/  # QProcess 包装：spawn flare server + JSON Lines 解析（M1）
-├── tests/          # TDD 测试（QtTest）
-├── packaging/      # 三平台构建脚本
-└── docs/           # 开发文档
+├── src/             Qt 主程序：chatwidget（对话区）、sessionlistwidget（会话列表/回收站/归档）、
+│                    settingspanel、memorypanel、skillpanel、versionpanel、updatechecker
+├── engine-bridge/   QProcess 包装：拉起引擎、JSON Lines 编解码、事件分发
+├── native/windows/  WPF 壳（.NET）+ NSIS 安装器
+├── native/macos/    AppKit 壳（Swift）
+├── native/protocol/ 三壳共用的渲染契约（render-spec.md）
+├── tests/           QtTest 单测（CTest 驱动）
+├── packaging/       构建与打包脚本、图标、desktop 文件
+└── docs/            设计文档与评估记录
 ```
 
-## 构建
+---
+
+## 六、从源码构建
 
 ### Fedora
 
 ```bash
 sudo dnf install gcc-c++ cmake qt6-qtbase-devel
-./packaging/build-fedora.sh
+cmake -B build-fedora -DCMAKE_BUILD_TYPE=Release
+cmake --build build-fedora -j8
+./build-fedora/flare-client
 ```
 
-### macOS
-
-```bash
-xcode-select --install
-brew install qt@6
-./packaging/build-macos.sh
-```
-
-### Windows
+### Windows（WPF 壳）
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File packaging/build-windows.ps1
 ```
 
-## 测试
+### macOS（AppKit 壳）
 
 ```bash
-ctest --test-dir build-fedora --output-on-failure
+./packaging/build-macos.sh
 ```
 
-## 协作
+### 跑测试
 
-项目进展记录在飞书协作文档（fedora-hermes 与 macmini-hermes 共同维护）。
-macmini-hermes 每小时读文档检测更新，在 macOS 端跟进编译/打包/冒烟。
+```bash
+QT_QPA_PLATFORM=offscreen ctest --test-dir build-fedora --output-on-failure
+```
+
+### 打包（rpm / deb）
+
+```bash
+# GUI 包（内置引擎）：先构建 GUI，再用 GUI_BIN 指给它
+GUI_BIN=$PWD/../flare-client/build-fedora/flare-client \
+  ../flare/packaging/gui/build-gui-linux.sh <版本号>
+```
+
+产物落在 `../flare/dist/`：`flare-client-<版本>-1.fc<NN>.x86_64.rpm` 与 `.deb`。
+
+> 打包前务必删掉 `dist/` 里同版本的旧包，否则会误发上一次的产物。
+
+---
+
+## 七、数据与隐私
+
+| 路径 | 内容 | 说明 |
+|---|---|---|
+| `~/.flare/flare.db` | 会话与消息（SQLite） | 与 CLI 版共用；卸载客户端不会删 |
+| `~/.flare/.env` | API Key、模型名、Base URL | **只在本机**；权限建议 `600` |
+| `~/.config/flare/flare-client.ini` | 界面偏好：置顶、本地别名、工作目录 | 纯本地 UI 状态 |
+
+- 仓库与安装包中**不含任何真实密钥**；仓库只放 `env.example` 空模板。
+- 客户端**不回显**密钥：设置面板里 Key 以掩码显示。
+- 会话内容随请求发给你配置的模型服务商（默认 DeepSeek），不经过本项目作者的任何服务器。
+
+---
+
+## 八、故障排查
+
+| 现象 | 原因与处理 |
+|---|---|
+| 状态栏提示「还没填 API Key」 | 点提示打开设置，填 Key 保存即可；保存后提示自动消失 |
+| 对话报 401 / 鉴权失败 | Key 无效或已失效；也可能是 Key 与服务商不匹配（DeepSeek 的 Key 不能配到 OpenAI 的 Base URL） |
+| 回复报「模型不存在」 | 设置里的模型名写错；DeepSeek 常用 `deepseek-chat` |
+| 点了发送没反应 | 看对话里有没有「⚠️ Flare」气泡，引擎错误会显示在那里 |
+| 列表里看不到老会话 | 多开过 CLI 的会话？确认 `~/.flare/flare.db` 存在且当前用户可读 |
+| 关掉窗口后程序还在 | **这是设计如此**：点关闭是收进托盘，退出请用托盘右键「退出 Flare」 |
+| 找不到托盘图标 | 部分桌面环境没开托盘支持；此时关窗退化为最小化，状态栏会提示 |
+| 提示找不到引擎 | 装成了「纯引擎包」却没装 GUI 包，或 GUI 包内的引擎被单独删掉；重装 GUI 包 |
+
+---
+
+## 九、许可
+
+MIT License，见 [LICENSE](LICENSE)。
