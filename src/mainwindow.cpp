@@ -27,6 +27,7 @@
 #include <QApplication>
 #include <QCloseEvent>
 #include <QCoreApplication>
+#include <QShortcut>
 
 // 客户端自身版本：编译期由 CMake 的 FLARE_CLIENT_VERSION 注入（source point = CMakeLists.txt VERSION）
 #ifndef FLARE_CLIENT_VERSION
@@ -40,6 +41,7 @@ MainWindow::MainWindow(QWidget *parent)
     setWindowTitle(QStringLiteral("Flare"));
     resize(980, 640);
     setMinimumSize(820, 600);
+    restoreWindowGeometry();   // 记住上次窗口大小/位置（拖动过就不用每次再拖）
 
     // 用户铁律：无菜单栏（显式置空，避免任何平台默认菜单）
     setMenuBar(nullptr);
@@ -153,6 +155,20 @@ MainWindow::MainWindow(QWidget *parent)
     // M8 托盘：关窗口不退出（用户反馈：误关一次会话上下文就没了）
     setupTray();
     checkApiKeyConfigured();   // 没填 key 就在状态栏提醒，别让用户对着空对话框发呆
+
+    // M9: 快捷键（ApplicationShortcut = 焦点在输入框里也照样生效）
+    auto *scNew = new QShortcut(QKeySequence::New, this);           // Ctrl+N 新建会话
+    scNew->setContext(Qt::ApplicationShortcut);
+    connect(scNew, &QShortcut::activated, this, [this]() {
+        if (m_sessions && m_sessions->newButton())
+            m_sessions->newButton()->click();
+    });
+    auto *scFind = new QShortcut(QKeySequence::Find, this);         // Ctrl+F 搜索会话
+    scFind->setContext(Qt::ApplicationShortcut);
+    connect(scFind, &QShortcut::activated, m_sessions, &SessionListWidget::focusSearch);
+    auto *scSettings = new QShortcut(QKeySequence(QStringLiteral("Ctrl+,")), this);  // Ctrl+, 设置
+    scSettings->setContext(Qt::ApplicationShortcut);
+    connect(scSettings, &QShortcut::activated, this, &MainWindow::openSettingsPanel);
 
     // 启动 flare server（后台，不阻塞 UI）
     if (m_engine->start()) {
@@ -346,6 +362,22 @@ void MainWindow::openVersionPanel()
 
 // ---------------- M8: 工作目录 / 托盘 / 关闭行为 ----------------
 
+void MainWindow::restoreWindowGeometry()
+{
+    QSettings s(QSettings::IniFormat, QSettings::UserScope,
+                QStringLiteral("flare"), QStringLiteral("flare-client"));
+    const QByteArray geo = s.value(QStringLiteral("window/geometry")).toByteArray();
+    if (!geo.isEmpty())
+        restoreGeometry(geo);
+}
+
+void MainWindow::saveWindowGeometry()
+{
+    QSettings(QSettings::IniFormat, QSettings::UserScope,
+              QStringLiteral("flare"), QStringLiteral("flare-client"))
+        .setValue(QStringLiteral("window/geometry"), saveGeometry());
+}
+
 // 与 SessionListWidget 的 pinnedSettings() 指向同一个 ini：
 // QSettings(IniFormat, UserScope, "flare", "flare-client") → ~/.config/flare/flare-client.ini
 QString MainWindow::settingsFilePath() const
@@ -430,6 +462,7 @@ void MainWindow::setupTray()
     QAction *quitAct = menu->addAction(QStringLiteral("退出 Flare"));
     connect(quitAct, &QAction::triggered, this, [this]() {
         m_forceQuit = true;
+        saveWindowGeometry();   // qApp->quit() 不走 closeEvent，这里单独存
         qApp->quit();
     });
     m_tray->setContextMenu(menu);
@@ -447,6 +480,7 @@ void MainWindow::setupTray()
 
 void MainWindow::closeEvent(QCloseEvent *event)
 {
+    saveWindowGeometry();   // 关窗（收进托盘）时顺手记住大小/位置
     // 托盘「退出」才真退；否则关窗口只是收起来（用户反馈：误关一次上下文就没了）
     if (m_forceQuit) {
         event->accept();

@@ -41,6 +41,9 @@ private slots:
     void cancelledClosesStream();
     void setSessionCancelsActiveStream();
     void emptyHistoryShowsWelcome();
+    // M9 打磨
+    void markdownRenderedAfterStream();
+    void markdownUnclosedCodeBlockStillShows();
 };
 
 // 构造一个 text 事件
@@ -347,6 +350,43 @@ void ChatWidgetTest::emptyHistoryShowsWelcome()
     QVERIFY2(w.outputText().contains(QStringLiteral("F L A R E")), qPrintable(w.outputText()));
     QVERIFY2(w.outputText().contains(QStringLiteral("Let your inspiration flare")),
              qPrintable(w.outputText()));
+}
+
+
+// ---- M9: 流式结束后把 Markdown 渲染成富文本（不再让用户看到 ** 和 ```）----
+void ChatWidgetTest::markdownRenderedAfterStream()
+{
+    EngineBridge bridge;
+    ChatWidget w(&bridge);
+
+    w.onEngineEvent(textEvent(QStringLiteral(
+        "**要点**\n- 第一条\n- 第二条\n行内 `config.yaml` 已改\n```cpp\nint a = 1;\n```")));
+    w.onEngineEvent(QJsonObject{{"type", "done"}});
+
+    const QString out = w.outputText();
+    QVERIFY2(!out.contains(QStringLiteral("**")), qPrintable(out));
+    QVERIFY2(!out.contains(QStringLiteral("```")), qPrintable(out));
+    QVERIFY2(!out.contains(QStringLiteral("`config.yaml`")), qPrintable(out)); // 反引号被吃掉
+    QVERIFY2(out.contains(QStringLiteral("要点")), qPrintable(out));
+    QVERIFY2(out.contains(QStringLiteral("第一条")), qPrintable(out));
+    QVERIFY2(out.contains(QStringLiteral("config.yaml")), qPrintable(out));
+    QVERIFY2(out.contains(QStringLiteral("int a = 1;")), qPrintable(out));
+    // 「Flare：」标签只出现一次，说明渲染没有把消息块拆开
+    QCOMPARE(out.count(QStringLiteral("Flare：")), 1);
+}
+
+// 模型偶尔忘记收尾的代码块也要显示出来，不能整段吞掉
+void ChatWidgetTest::markdownUnclosedCodeBlockStillShows()
+{
+    EngineBridge bridge;
+    ChatWidget w(&bridge);
+
+    w.onEngineEvent(textEvent(QStringLiteral("看这里\n```bash\nmake all")));
+    w.onEngineEvent(QJsonObject{{"type", "done"}});
+
+    const QString out = w.outputText();
+    QVERIFY2(out.contains(QStringLiteral("make all")), qPrintable(out));
+    QVERIFY2(!out.contains(QStringLiteral("```")), qPrintable(out));
 }
 
 QTEST_MAIN(ChatWidgetTest)

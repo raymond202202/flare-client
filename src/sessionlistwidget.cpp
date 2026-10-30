@@ -545,6 +545,14 @@ void SessionListWidget::rebuildMenu()
     });
 }
 
+void SessionListWidget::focusSearch()
+{
+    if (!m_searchBox)
+        return;
+    m_searchBox->setFocus(Qt::ShortcutFocusReason);
+    m_searchBox->selectAll();
+}
+
 void SessionListWidget::onContextMenuRequested(const QPoint &pos)
 {
     if (QListWidgetItem *item = m_list->itemAt(pos))

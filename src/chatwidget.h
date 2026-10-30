@@ -89,6 +89,8 @@ private:
     QPushButton *m_stopBtn = nullptr;
     QString m_sessionId;
     bool m_streaming = false; // 是否处于 AI 回复流中（chunk 追加目标块）
+    // M9: 本轮流式正文在文档里的起始位置（endStream 时把这段纯文本换成渲染后的富文本）
+    int m_streamStartPos = -1;
     QTimer *m_breathTimer = nullptr; // M5-2 欢迎词呼吸动画
     bool m_welcomeVisible = false;   // 欢迎词是否显示中
 

@@ -1,4 +1,5 @@
 #include "chatwidget.h"
+#include "markdownlite.h"
 
 #include <QLabel>
 #include <QJsonValue>
@@ -369,6 +370,7 @@ void ChatWidget::appendStreamChunk(const QString &chunk)
         label.setForeground(FlameTheme::orange());
         label.setFontWeight(QFont::Bold);
         cursor.insertText(QStringLiteral("Flare："), label);
+        m_streamStartPos = cursor.position();   // M9: 正文起点，收流后在这段上做 Markdown 渲染
     }
     cursor.insertText(chunk);
     m_output->setTextCursor(cursor);
@@ -377,7 +379,30 @@ void ChatWidget::appendStreamChunk(const QString &chunk)
 
 void ChatWidget::endStream()
 {
+    if (!m_streaming) {
+        m_streamStartPos = -1;
+        return;
+    }
     m_streaming = false;
+
+    // M9: 流式期间是纯文本追加（逐 chunk 做 HTML 解析会吃掉正在输入的半个标记），
+    // 收流这一刻把这一整段替换成渲染后的富文本：**粗体** / `代码` / 代码块 / 列表都能正常显示。
+    const int start = m_streamStartPos;
+    m_streamStartPos = -1;
+    const int end = m_output->document()->characterCount() - 1;
+    if (start < 0 || end <= start)
+        return;
+
+    QTextCursor cursor(m_output->document());
+    cursor.setPosition(start);
+    cursor.setPosition(end, QTextCursor::KeepAnchor);
+    QString raw = cursor.selectedText();
+    raw.replace(QChar(0x2029), QLatin1Char('\n'));   // 段落分隔符还原成换行
+    if (raw.trimmed().isEmpty())
+        return;
+    cursor.insertHtml(MarkdownLite::toHtml(raw));
+    m_output->setTextCursor(cursor);
+    m_output->ensureCursorVisible();
 }
 
 // M3-4: 工具调用/结果卡片 —— 浅紫底 + 圆角边框 + 图标标题 + 等宽内容

@@ -25,6 +25,8 @@ public:
     // 测试接口
     EngineBridge *engine() const { return m_engine.get(); }
     SessionListWidget *sessions() const { return m_sessions; }
+    void restoreWindowGeometry();
+    void saveWindowGeometry();
     // M3-6: 当前模型信息显示文本（状态栏），如 "deepseek-chat · deepseek"
     QString modelInfoText() const { return m_modelInfo; }
     // 状态栏版本文本：客户端版本（编译期）+ 内核名字与版本（运行时 version 帧）

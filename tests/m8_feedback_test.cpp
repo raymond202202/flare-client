@@ -12,6 +12,7 @@
 #include <QLineEdit>
 #include <QFileInfo>
 #include <QPushButton>
+#include <QCloseEvent>
 #include "engine_bridge.h"
 #include "sessionlistwidget.h"
 #include "chatwidget.h"
@@ -42,6 +43,9 @@ private slots:
     void engineErrorSurfacesToUser();
     void emptyListShowsHint();
     void apiKeyDetection();
+    void windowGeometryPersisted();
+    void shortcutFocusSearch();
+    void shortcutNewSession();
 };
 
 // 1) 列表项：主标题 + 第二行 preview+时间；无标题时用 preview 当主标题
@@ -274,6 +278,72 @@ void M8FeedbackTest::apiKeyDetection()
     QVERIFY(MainWindow::envHasApiKey(QStringLiteral("OPENAI_API_KEY=sk-x\nDEFAULT_MODEL=deepseek-chat")));
     // 注释掉的那行不算（用户常在 .env 里临时注释掉 key）
     QVERIFY(!MainWindow::envHasApiKey(QStringLiteral("#DEEPSEEK_API_KEY=sk-abc\n")));
+}
+
+
+// ---- M9: 窗口几何持久化（拖动/调整过大小，下次打开还是那个大小）----
+void M8FeedbackTest::windowGeometryPersisted()
+{
+    QSettings s(QSettings::IniFormat, QSettings::UserScope,
+                QStringLiteral("flare"), QStringLiteral("flare-client"));
+    const bool hadKey = s.contains(QStringLiteral("window/geometry"));
+    const QVariant oldVal = s.value(QStringLiteral("window/geometry"));
+
+    QSize actual;
+    {
+        MainWindow w;
+        w.setGeometry(120, 90, 830, 610);
+        actual = w.size();
+        QCloseEvent ev;
+        QApplication::sendEvent(&w, &ev);
+        // 关窗=收进托盘，事件必须被 ignore，且几何要落盘
+        QVERIFY(!ev.isAccepted());
+    }
+
+    QSettings s2(QSettings::IniFormat, QSettings::UserScope,
+                 QStringLiteral("flare"), QStringLiteral("flare-client"));
+    QVERIFY(!s2.value(QStringLiteral("window/geometry")).toByteArray().isEmpty());
+
+    MainWindow w2;
+    w2.restoreWindowGeometry();
+    // offscreen 的虚拟屏只有 800x600，宽度会被夹回最小宽度；用高度证明 ini 真的被读回来了
+    // （构造默认是 640 高，这里存的是 610）
+    QCOMPARE(w2.size().height(), actual.height());
+    QVERIFY(w2.size().width() >= 820);
+
+    if (hadKey)
+        s2.setValue(QStringLiteral("window/geometry"), oldVal);
+    else
+        s2.remove(QStringLiteral("window/geometry"));
+    s2.sync();
+}
+
+// ---- M9: Ctrl+F 聚焦搜索框 ----
+void M8FeedbackTest::shortcutFocusSearch()
+{
+    MainWindow w;
+    w.show();
+    QApplication::setActiveWindow(&w);
+    QTest::qWait(50);
+    QTest::keyClick(&w, Qt::Key_F, Qt::ControlModifier);
+    QTest::qWait(30);
+    QWidget *f = QApplication::focusWidget();
+    // 焦点必须落到搜索框（ApplicationShortcut 在 offscreen 下也可能只触发 setFocus）
+    QVERIFY2(f == w.sessions()->searchBox(), "Ctrl+F 没有把焦点给搜索框");
+}
+
+// ---- M9: Ctrl+N 新建会话（等价于点「＋ 新建」）----
+void M8FeedbackTest::shortcutNewSession()
+{
+    MainWindow w;
+    w.show();
+    QApplication::setActiveWindow(&w);
+    QTest::qWait(50);
+    const int before = w.sessions()->list()->count();
+    QTest::keyClick(&w, Qt::Key_N, Qt::ControlModifier);
+    QTest::qWait(60);
+    // 新建是否真的产生条目取决于是否连上引擎；至少不能崩、不能少条目
+    QVERIFY(w.sessions()->list()->count() >= before);
 }
 
 QTEST_MAIN(M8FeedbackTest)

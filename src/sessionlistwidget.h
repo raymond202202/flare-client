@@ -40,6 +40,8 @@ public:
     QPushButton *skillButton() const { return m_skillBtn; }
     QPushButton *settingsButton() const { return m_settingsBtn; }
     QLineEdit *searchBox() const { return m_searchBox; }
+    // M9: Ctrl+F 聚焦搜索框（并把已有关键字全选，直接输入即覆盖）
+    void focusSearch();
     // M8: 归档入口已迁到会话右键菜单；对象保留（不进布局）供测试与无障碍访问
     QPushButton *archiveButton() const { return m_archiveBtn; }
     // M8: 会话项右键菜单（测试可直接读 actions 文本）

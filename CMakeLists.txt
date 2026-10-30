@@ -27,6 +27,8 @@ add_library(flare_client_core STATIC
   src/mainwindow.cpp
   src/chatwidget.h
   src/chatwidget.cpp
+  src/markdownlite.h
+  src/markdownlite.cpp
   src/sessionlistwidget.h
   src/sessionlistwidget.cpp
   src/memorypanel.h
