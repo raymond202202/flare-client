@@ -155,6 +155,18 @@
 - **注**：生产自检里 `session_type=` / `desktop=` 为空，是 Hermes 进程本身没导出 `XDG_SESSION_TYPE`/`XDG_CURRENT_DESKTOP`（只注入了 `WAYLAND_DISPLAY`），不是客户端缺陷。
 
 
+### 0.6.182 — 「选择工作目录」拿到内核级证据（Fedora 七条诉求全部闭环）
+
+- 病象：七条诉求里「要有选择工作目录 / 读取本地文件的入口」是唯一只有代码级确认、没有运行时佐证的一条。
+- 病根：原生 `QFileDialog` 没法自动点，没法用 UI 自动化取证；但真正会出事的是后半段——目录写进了 ini，引擎子进程却没换根。只验「对话框弹出来」等于没验。
+- 修法：加 `--workdir-test <目录>`，调用与状态栏 📂 按钮、拖文件夹进窗口**完全同一个** `MainWindow::applyWorkingDirectory()`，打印切换前后的引擎子进程 pid 与 `/proc/<pid>/cwd`（内核事实，不是界面文案）。为此补 `EngineBridge::enginePid()` / `MainWindow::enginePid()` 两个只读访问器。
+- 验证（dev build + 生产 RPM 双证）：
+  - dev：`BEFORE_WORKDIR pid=4091529 engine_cwd=/tmp` → `AFTER_WORKDIR pid=4091553 engine_cwd=/tmp/wdprobe want=/tmp/wdprobe`，ini 落 `[engine] workdir=/tmp/wdprobe`
+  - 生产：`BEFORE_WORKDIR pid=4096282 engine_cwd=/home/.../flare-client` → `AFTER_WORKDIR pid=4096298 engine_cwd=/tmp/wdprobe2 want=/tmp/wdprobe2`
+  - pid 变化 = 引擎确实重启；cwd 落到所选目录 = 工具沙箱根真的换了。
+- 同轮补真机回归：真实用户库首屏 `LIST_ITEMS=22`，22 条全部可辨识内容，**0 个「新会话」**；图片会话显示 `[图片] 图中写着什么？…`（`MediaTags` 生效）；分组「今天 / 昨天」与本地时间（14:36、10-29）正确 → 诉求 #1「列表项名称要能看出会话内容」闭环。
+- 生产模式四项自检（`--system-check` / `--close-test` / `--paste-test` / `--workdir-test`）全通过；`ctest 14/14`。
+
 ## 构建命令（每轮必须执行）
 
 ```bash
