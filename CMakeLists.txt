@@ -74,12 +74,21 @@ add_custom_command(TARGET flare-client POST_BUILD
 if(WIN32)
   set_target_properties(flare-client PROPERTIES WIN32_EXECUTABLE TRUE)
   # 把 .ico / 版本信息编进 exe：资源管理器、任务栏、快捷方式读的是 exe 内嵌图标，
-  # 不嵌的话显示系统默认空白图标。只在 MinGW 交叉编译时需要（MSVC 走 IDE 资源）。
-  if(MINGW)
-    enable_language(RC)
-    target_sources(flare-client PRIVATE
-      ${CMAKE_CURRENT_SOURCE_DIR}/packaging/flare-client.rc)
-  endif()
+  # 不嵌的话显示系统默认空白图标。
+  #
+  # 两个坑都踩过：
+  #  1. 以前只在 MINGW 下加 .rc，注释写「MSVC 走 IDE 资源」——CMake 构建没有 IDE，
+  #     MSVC 出来的 exe 既无图标也无版本信息（Windows 属性页一片空白）。
+  #     现在 WIN32 一律编进去。
+  #  2. 版本号不许手改。.rc 里的 0,6,163,0 曾长期落后于实际版本，用户在
+  #     「属性 → 详细信息」看到的是假版本号。改成 .rc.in 由 project(VERSION) 注入，
+  #     版本号只有 CMakeLists 一处来源。
+  configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/packaging/flare-client.rc.in
+    ${CMAKE_CURRENT_BINARY_DIR}/flare-client.rc
+    @ONLY)
+  enable_language(RC)
+  target_sources(flare-client PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/flare-client.rc)
 endif()
 
 # ---------- 测试（TDD） ----------

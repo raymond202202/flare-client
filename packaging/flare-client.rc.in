@@ -17,11 +17,11 @@
  *     numeric: VOS_NT_WINDOWS32=0x00040004, VFT_APP=0x1, VFT2_UNKNOWN=0x0
  */
 
-IDI_ICON1 ICON "flare-client.ico"
+IDI_ICON1 ICON "@CMAKE_CURRENT_SOURCE_DIR@/packaging/flare-client.ico"
 
 1 VERSIONINFO
-FILEVERSION     0,6,163,0
-PRODUCTVERSION  0,6,163,0
+FILEVERSION     @PROJECT_VERSION_MAJOR@,@PROJECT_VERSION_MINOR@,@PROJECT_VERSION_PATCH@,0
+PRODUCTVERSION  @PROJECT_VERSION_MAJOR@,@PROJECT_VERSION_MINOR@,@PROJECT_VERSION_PATCH@,0
 FILEFLAGSMASK   0x3fL
 FILEFLAGS       0x0L
 FILEOS          0x00040004L
@@ -34,12 +34,12 @@ BEGIN
     BEGIN
       VALUE "CompanyName",      "Flare"
       VALUE "FileDescription",  "Flare AI Agent Client"
-      VALUE "FileVersion",      "0.6.163"
+      VALUE "FileVersion",      "@PROJECT_VERSION@"
       VALUE "InternalName",     "flare-client"
       VALUE "LegalCopyright",   "MIT License"
       VALUE "OriginalFilename", "flare-client.exe"
       VALUE "ProductName",      "Flare Client"
-      VALUE "ProductVersion",   "0.6.163"
+      VALUE "ProductVersion",   "@PROJECT_VERSION@"
     END
   END
   BLOCK "VarFileInfo"

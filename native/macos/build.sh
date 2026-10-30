@@ -4,14 +4,21 @@
 # 用法（在 macOS 上执行）：
 #   ./build.sh                       # 只构建 .app（引擎不内置，运行时找系统里的 flare）
 #   ENGINE_BIN=/path/to/flare ./build.sh   # 构建内置引擎的 GUI 包（单文件交付形态）
-#   VERSION=0.6.163 ./build.sh
+#   VERSION=x.y.z ./build.sh          # 覆盖版本号（默认取客户端 CMakeLists 的 project VERSION）
 #
 # 产物：build/Flare.app
 set -euo pipefail
 cd "$(dirname "$0")"
 
 APP_NAME="Flare"
-VERSION="${VERSION:-0.6.163}"
+# 版本号只有一处来源：客户端仓库 CMakeLists.txt 的 project(flare-client VERSION x.y.z)。
+# 这里曾写死 0.6.163，导致 .app 的 Info.plist 报假版本。
+if [ -z "${VERSION:-}" ]; then
+  VERSION="$(grep -oE 'project\([^)]* VERSION [0-9]+\.[0-9]+\.[0-9]+' \
+             "$(dirname "$0")/../../CMakeLists.txt" | head -1 |
+             grep -oE '[0-9]+\.[0-9]+\.[0-9]+')"
+  [ -n "$VERSION" ] || { echo "无法从 CMakeLists.txt 解析版本号，请用 VERSION=x.y.z 显式指定" >&2; exit 1; }
+fi
 OUT="${OUT:-build}"
 BUNDLE="$OUT/$APP_NAME.app"
 
