@@ -191,11 +191,13 @@ void SessionListWidgetTest::searchEventPopulatesList()
     QCOMPARE(w.list()->item(0)->data(Qt::UserRole).toString(), QString("hit-1"));
 }
 
-// M7-2: archived_sessions 事件 → 列表填充
+// M7-2 / M8: archived_sessions 事件 → 归档视图内填充列表
+// M8 起语义收紧：只在归档视图（回收站）内填充，否则会把「最近会话」列表顶掉
 void SessionListWidgetTest::archivedEventPopulatesList()
 {
     EngineBridge bridge;
     SessionListWidget w(&bridge);
+    w.showArchived(); // M8: 先进入回收站/归档箱视图
 
     QJsonArray arr;
     arr.append(QJsonObject{{"id", "arch-1"}, {"title", "归档会话A"}, {"updatedAt", "2026-08-01T10:00:00"}});

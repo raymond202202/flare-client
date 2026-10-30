@@ -2,6 +2,7 @@
 #include <QTimer>
 #include <QPixmap>
 #include <QFile>
+#include "sessionlistwidget.h"
 #include "mainwindow.h"
 
 // 客户端版本由 CMake 注入（project(... VERSION x.y.z) → FLARE_CLIENT_VERSION），
@@ -20,10 +21,14 @@ int main(int argc, char *argv[])
     app.setOrganizationName(QStringLiteral("Flare"));
 
     QString shotPath;
+    QString viewArg;
     for (int i = 1; i < argc; ++i) {
         const QString a = QString::fromLocal8Bit(argv[i]);
         if (a == QLatin1String("--screenshot") && i + 1 < argc)
             shotPath = QString::fromLocal8Bit(argv[++i]);
+        // --view archived|recent：截图前切到指定视图（回归验证回收站用）
+        else if (a == QLatin1String("--view") && i + 1 < argc)
+            viewArg = QString::fromLocal8Bit(argv[++i]);
     }
 
     MainWindow w;
@@ -31,6 +36,8 @@ int main(int argc, char *argv[])
     w.show();
 
     if (!shotPath.isEmpty()) {
+        if (viewArg.compare(QLatin1String("archived"), Qt::CaseInsensitive) == 0 && w.sessions())
+            w.sessions()->showArchived();
         // 等 2.5s 让欢迎词呼吸动画进入可见帧，再抓取
         QTimer::singleShot(2500, &w, [&]() {
             const QPixmap pm = w.grab();

@@ -6,6 +6,8 @@
 #include <QLineEdit>
 #include <QPushButton>
 #include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QStringList>
 #include <memory>
 #include "engine_bridge.h"
 // ============================================================
@@ -23,8 +25,18 @@ public:
     QLineEdit *input() const { return m_input; }
     QTextEdit *output() const { return m_output; }
     QPushButton *stopButton() const { return m_stopBtn; }
+    QPushButton *attachButton() const { return m_attachBtn; }
+    QPushButton *sendButton() const { return m_sendBtn; }
+    QWidget *attachBar() const { return m_attachBar; }
+    QStringList attachments() const { return m_attachments; }
     QString outputText() const { return m_output->toPlainText(); }
     QString sessionId() const { return m_sessionId; }
+
+signals:
+    // M8 用户反馈「会话名看不出这个会话是干什么的」：
+    // 首条消息发出后把内容片段抛给会话列表，列表用它作为该会话的本地别名。
+    // （引擎侧自动标题要改数据层，先用宿主别名让名字立刻有意义）
+    void firstMessageSent(const QString &sessionId, const QString &text);
 
 public slots:
     void sendMessage();
@@ -36,7 +48,17 @@ public slots:
     // M4-5 易用性：停止当前生成（发 cancel 协议）
     void stopGeneration();
 
+protected:
+    // M8 粘贴图片：QLineEdit 不支持富内容，在输入框上拦 Ctrl+V，
+    // 剪贴板有图片就存成 png 附件，否则走默认文本粘贴。
+    bool eventFilter(QObject *watched, QEvent *event) override;
+
 private:
+    // M8 附件（本地文件 / 剪贴板图片）
+    void pickFiles();
+    void addAttachment(const QString &path);
+    void removeAttachment(const QString &path);
+    void rebuildAttachChips();
     void appendMessage(const QString &who, const QString &text);
     // M3-3 流式渲染：text 事件按 chunk 增量追加到当前消息块
     void appendStreamChunk(const QString &chunk);
@@ -69,6 +91,13 @@ private:
     bool m_streaming = false; // 是否处于 AI 回复流中（chunk 追加目标块）
     QTimer *m_breathTimer = nullptr; // M5-2 欢迎词呼吸动画
     bool m_welcomeVisible = false;   // 欢迎词是否显示中
+
+    // M8 附件区（本地文件 + 剪贴板图片），默认隐藏，有附件才显示
+    QPushButton *m_attachBtn = nullptr;
+    QWidget *m_attachBar = nullptr;
+    QHBoxLayout *m_attachChips = nullptr;
+    QStringList m_attachments;       // 待发送附件的绝对路径
+    bool m_firstMessageDone = false; // 本会话是否已发过消息（别名只取首条）
 };
 
 #endif // CHATWIDGET_H

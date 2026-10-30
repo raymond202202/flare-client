@@ -65,6 +65,13 @@ public:
     QString engineVersion() const;   // 最近一次 version 响应
     QString protocolVersion() const; // 最近一次 version 响应的 protocol
 
+    // M8 工作目录（用户反馈：没有选择工作目录 / 读取本地文件的入口）
+    // 引擎的工具沙箱根硬编码 os.Getwd()（internal/tools 里 os.Getwd()），没有 cwd 参数，
+    // 因此宿主侧用 QProcess 的工作目录把根目录带过去 —— 零协议改动即可生效。
+    // 改目录后需重启引擎进程（stop + start）才对工具可见。
+    void setWorkingDirectory(const QString &dir);
+    QString workingDirectory() const { return m_workdir; }
+
 signals:
     // 每个 stdout 事件（含 chat 流式事件），obj = 完整 JSON
     void eventReceived(const QJsonObject &obj);
@@ -90,6 +97,15 @@ public slots:
     void archivedSessions();
     void createSession(const QString &sessionId, const QString &title);
     void deleteSession(const QString &sessionId);
+    // M8 会话管理（协议 §23/§24/…：引擎侧早已实现，宿主此前未封装）
+    // 重命名会话：ok 回执带 title（空白标题引擎会回 error，宿主侧先 Trim 判空）
+    void renameSession(const QString &sessionId, const QString &title);
+    // 归档会话：end_session，ok 回执 archived=true（归档后从最近列表消失）
+    void endSession(const QString &sessionId);
+    // 从归档恢复：restore_session，ok 回执 restored=true
+    void restoreSession(const QString &sessionId);
+    // 清空会话消息但保留会话记录与用量：clear_session，ok 回执 cleared=N
+    void clearSession(const QString &sessionId);
     void getMemories(const QString &sessionId = "default");
     // M3-5 确认门回传：decision ∈ allow_once/allow_session/always/deny/alternative
     void confirmResult(const QString &sessionId, const QString &id, const QString &decision);
@@ -113,6 +129,7 @@ private:
     bool m_processingStdout = false; // 重入保护：嵌套事件循环期间阻止二次解析
     QString m_engineVersion;
     QString m_protocolVersion;
+    QString m_workdir;               // M8 工具沙箱根（QProcess 工作目录）
 };
 
 #endif // ENGINE_BRIDGE_H

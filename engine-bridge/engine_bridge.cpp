@@ -56,6 +56,10 @@ bool EngineBridge::start(const QStringList &args)
         return false;
 
     m_process->setProcessChannelMode(QProcess::SeparateChannels);
+    // M8: 把工作目录交给引擎进程 —— 引擎的工具沙箱根就是 os.Getwd()，
+    // 没有 cwd 参数可用，这是零协议改动下让「选择工作目录 / 读本地文件」生效的唯一途径。
+    if (!m_workdir.isEmpty() && QFileInfo(m_workdir).isDir())
+        m_process->setWorkingDirectory(m_workdir);
     // 查找 flare 引擎，优先级：
     //   1) 与本程序同目录的引擎 —— GUI 安装包把引擎一起打进去了
     //      （macOS: Flare Client.app/Contents/MacOS/flare
@@ -98,6 +102,21 @@ QString EngineBridge::engineVersion() const
 QString EngineBridge::protocolVersion() const
 {
     return m_protocolVersion;
+}
+
+// M8: 记录工具沙箱根目录。进程在跑时不会立即生效——由调用方（主窗口）负责
+// stop + start 重启，重启后引擎就以新目录作为工具根。
+void EngineBridge::setWorkingDirectory(const QString &dir)
+{
+    // 空字符串 = 恢复默认（继承 GUI 自身 cwd）；非目录一律拒绝，避免静默无效
+    if (dir.isEmpty()) {
+        m_workdir.clear();
+        return;
+    }
+    const QFileInfo info(dir);
+    if (!info.exists() || !info.isDir())
+        return;
+    m_workdir = info.absoluteFilePath();
 }
 
 void EngineBridge::sendRequest(const QJsonObject &req)
@@ -183,6 +202,41 @@ void EngineBridge::deleteSession(const QString &sessionId)
 {
     sendRequest({
         {QStringLiteral("type"), QStringLiteral("delete_session")},
+        {QStringLiteral("sessionId"), sessionId},
+    });
+}
+
+// M8 会话管理四件套：协议字段名与引擎 compat.go 逐字对齐
+// （sessionId 缺省时引擎按 "default" 处理，这里一律显式传）
+void EngineBridge::renameSession(const QString &sessionId, const QString &title)
+{
+    sendRequest({
+        {QStringLiteral("type"), QStringLiteral("rename_session")},
+        {QStringLiteral("sessionId"), sessionId},
+        {QStringLiteral("title"), title},
+    });
+}
+
+void EngineBridge::endSession(const QString &sessionId)
+{
+    sendRequest({
+        {QStringLiteral("type"), QStringLiteral("end_session")},
+        {QStringLiteral("sessionId"), sessionId},
+    });
+}
+
+void EngineBridge::restoreSession(const QString &sessionId)
+{
+    sendRequest({
+        {QStringLiteral("type"), QStringLiteral("restore_session")},
+        {QStringLiteral("sessionId"), sessionId},
+    });
+}
+
+void EngineBridge::clearSession(const QString &sessionId)
+{
+    sendRequest({
+        {QStringLiteral("type"), QStringLiteral("clear_session")},
         {QStringLiteral("sessionId"), sessionId},
     });
 }

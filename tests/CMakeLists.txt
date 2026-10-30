@@ -36,6 +36,11 @@ add_executable(t_settingspanel settingspanel_test.cpp)
 target_link_libraries(t_settingspanel PRIVATE Qt6::Test flare_client_core)
 add_test(NAME settingspanel COMMAND t_settingspanel)
 
+# M8 用户反馈回归（回收站/别名/工作目录/粘贴图片）
+add_executable(t_m8_feedback m8_feedback_test.cpp)
+target_link_libraries(t_m8_feedback PRIVATE Qt6::Test flare_client_core)
+add_test(NAME m8_feedback COMMAND t_m8_feedback)
+
 # GUI 渲染验证（验收截图；手动运行: QT_QPA_PLATFORM=offscreen ./gui_capture）
 add_executable(gui_capture gui_capture.cpp)
 target_link_libraries(gui_capture PRIVATE Qt6::Widgets flare_client_core)

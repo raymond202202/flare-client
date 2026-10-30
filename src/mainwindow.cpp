@@ -16,6 +16,16 @@
 #include <QJsonObject>
 #include <QIcon>
 #include <QFile>
+#include <QFileInfo>
+#include <QDir>
+#include <QFileDialog>
+#include <QSettings>
+#include <QSystemTrayIcon>
+#include <QMenu>
+#include <QAction>
+#include <QStyle>
+#include <QApplication>
+#include <QCloseEvent>
 #include <QCoreApplication>
 
 // 客户端自身版本：编译期由 CMake 的 FLARE_CLIENT_VERSION 注入（source point = CMakeLists.txt VERSION）
@@ -86,6 +96,9 @@ MainWindow::MainWindow(QWidget *parent)
     // M3-6: 引擎事件 → 解析 models 展示模型信息
     connect(m_engine.get(), &EngineBridge::eventReceived,
             this, &MainWindow::onEngineEvent);
+    // M8: 会话首条消息 → 侧边栏别名，让列表名字能看出会话内容
+    connect(m_chat, &ChatWidget::firstMessageSent,
+            m_sessions, &SessionListWidget::setLocalAlias);
 
     // M3-6: 状态栏右侧模型信息标签（只显示 model/provider）
     m_modelLabel = new QLabel(QStringLiteral("🤖 模型加载中…"), this);
@@ -108,6 +121,38 @@ MainWindow::MainWindow(QWidget *parent)
         "QPushButton:pressed { color:#c2410c; }"));
     connect(m_versionButton, &QPushButton::clicked, this, &MainWindow::openVersionPanel);
     statusBar()->addPermanentWidget(m_versionButton);
+
+    // M8 工作目录：引擎工具沙箱根硬编码 os.Getwd()（internal/tools 里没有 cwd 参数），
+    // 所以把用户选的目录当成引擎进程的工作目录传下去；换目录后重启引擎即生效
+    const QString savedWorkdir = QSettings(settingsFilePath(), QSettings::IniFormat)
+                                     .value(QStringLiteral("engine/workdir"))
+                                     .toString();
+    if (!savedWorkdir.isEmpty() && QFileInfo(savedWorkdir).isDir())
+        m_engine->setWorkingDirectory(savedWorkdir);
+
+    m_workdirButton = new QPushButton(this);
+    m_workdirButton->setObjectName(QStringLiteral("workdirButton"));
+    m_workdirButton->setText(workdirText());
+    m_workdirButton->setCursor(Qt::PointingHandCursor);
+    m_workdirButton->setFlat(true);
+    m_workdirButton->setFocusPolicy(Qt::NoFocus);
+    m_workdirButton->setStyleSheet(QStringLiteral(
+        "QPushButton { border:none; color:#b45309; background:transparent;"
+        "              font-size:12px; padding:0 6px; }"
+        "QPushButton:hover { color:#f97316; text-decoration:underline; }"
+        "QPushButton:pressed { color:#c2410c; }"));
+    m_workdirButton->setToolTip(
+        m_engine->workingDirectory().isEmpty()
+            ? QStringLiteral("点击选择 Flare 的工作目录（Flare 读写本地文件的根目录）")
+            : QStringLiteral("当前工作目录：%1\n点击切换（会重启引擎）")
+                  .arg(m_engine->workingDirectory()));
+    connect(m_workdirButton, &QPushButton::clicked,
+            this, &MainWindow::chooseWorkingDirectory);
+    statusBar()->addPermanentWidget(m_workdirButton);
+
+    // M8 托盘：关窗口不退出（用户反馈：误关一次会话上下文就没了）
+    setupTray();
+    checkApiKeyConfigured();   // 没填 key 就在状态栏提醒，别让用户对着空对话框发呆
 
     // 启动 flare server（后台，不阻塞 UI）
     if (m_engine->start()) {
@@ -200,6 +245,78 @@ void MainWindow::openSettingsPanel()
     layout->setContentsMargins(0, 0, 0, 0);
     layout->addWidget(panel);
     dlg->exec();
+    // 填完 key 回来，状态栏提示应该自己消失
+    const bool hadHint = (m_keyHintButton != nullptr);
+    checkApiKeyConfigured();
+    if (hadHint && !m_keyHintButton)
+        statusBar()->showMessage(QStringLiteral("API Key 已保存，下一轮对话即生效"), 6000);
+}
+
+// 装了包、打开界面、发消息却没有任何反应 —— 首次使用最容易卡在这一步。
+// 与其等引擎抛错，不如在状态栏常驻一个能点的提示。
+bool MainWindow::envHasApiKey(const QString &envText)
+{
+    const QStringList lines = envText.split(QLatin1Char('\n'));
+    for (const QString &raw : lines) {
+        const QString line = raw.trimmed();
+        if (line.isEmpty() || line.startsWith(QLatin1Char('#'))
+            || !line.contains(QLatin1Char('=')))
+            continue;
+        // 与引擎 internal/config LoadDotEnv 的解析保持一致：
+        // 容许 "export " 前缀、容许单/双引号包裹
+        QString keyName = line.section(QLatin1Char('='), 0, 0).trimmed();
+        if (keyName.startsWith(QLatin1String("export ")))
+            keyName = keyName.mid(7).trimmed();
+        QString value = line.section(QLatin1Char('='), 1).trimmed();
+        if (value.size() >= 2
+            && ((value.startsWith(QLatin1Char('"')) && value.endsWith(QLatin1Char('"')))
+                || (value.startsWith(QLatin1Char('\'')) && value.endsWith(QLatin1Char('\'')))))
+            value = value.mid(1, value.size() - 2);
+        if (value.isEmpty())
+            continue;
+        // DEEPSEEK_API_KEY / OPENAI_API_KEY / LLM_API_KEY 都算已配置；
+        // 形如 DEEPSEEK_API_KEY= 的空值不算（模板就是这样，不能当成已配置）
+        if (keyName.endsWith(QLatin1String("API_KEY")))
+            return true;
+    }
+    return false;
+}
+
+void MainWindow::checkApiKeyConfigured()
+{
+    QString envText;
+    QFile f(QDir::homePath() + QStringLiteral("/.flare/.env"));
+    if (f.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        envText = QString::fromUtf8(f.readAll());
+        f.close();
+    }
+    const bool hasKey = envHasApiKey(envText);
+
+    if (hasKey) {
+        if (m_keyHintButton) {
+            statusBar()->removeWidget(m_keyHintButton);
+            m_keyHintButton->deleteLater();
+            m_keyHintButton = nullptr;
+        }
+        return;
+    }
+    if (m_keyHintButton)
+        return; // 提示已在，不重复加
+
+    m_keyHintButton = new QPushButton(QStringLiteral("⚠️ 还没填 API Key · 点这里设置"), this);
+    m_keyHintButton->setObjectName(QStringLiteral("keyHintButton"));
+    m_keyHintButton->setCursor(Qt::PointingHandCursor);
+    m_keyHintButton->setFlat(true);
+    m_keyHintButton->setFocusPolicy(Qt::NoFocus);
+    m_keyHintButton->setToolTip(
+        QStringLiteral("填入 API Key 后才能对话。配置写在 ~/.flare/.env，与命令行版共用。"));
+    m_keyHintButton->setStyleSheet(QStringLiteral(
+        "QPushButton { border:1px solid #fdba74; border-radius:10px;"
+        "              background:#fff7ed; color:#c2410c; font-size:12px;"
+        "              padding:2px 10px; }"
+        "QPushButton:hover { background:#ffedd0; color:#f97316; }"));
+    connect(m_keyHintButton, &QPushButton::clicked, this, &MainWindow::openSettingsPanel);
+    statusBar()->addPermanentWidget(m_keyHintButton);
 }
 
 // 状态栏版本文本：客户端版本（编译期）+ 内核名字与版本（运行时 version 帧）
@@ -225,6 +342,128 @@ void MainWindow::openVersionPanel()
     auto *dlg = new VersionPanel(gui, m_kernelVersion, m_protocolVersion, this);
     dlg->setAttribute(Qt::WA_DeleteOnClose);
     dlg->show();
+}
+
+// ---------------- M8: 工作目录 / 托盘 / 关闭行为 ----------------
+
+// 与 SessionListWidget 的 pinnedSettings() 指向同一个 ini：
+// QSettings(IniFormat, UserScope, "flare", "flare-client") → ~/.config/flare/flare-client.ini
+QString MainWindow::settingsFilePath() const
+{
+    static const QString path =
+        QSettings(QSettings::IniFormat, QSettings::UserScope,
+                  QStringLiteral("flare"), QStringLiteral("flare-client"))
+            .fileName();
+    return path;
+}
+
+QString MainWindow::workdirText() const
+{
+    const QString dir = m_engine->workingDirectory();
+    if (dir.isEmpty())
+        return QStringLiteral("📂 工作目录：默认");
+    QString name = QDir(dir).dirName();
+    if (name.isEmpty())
+        name = dir;
+    return QStringLiteral("📂 %1").arg(name);
+}
+
+void MainWindow::chooseWorkingDirectory()
+{
+    const QString start = m_engine->workingDirectory().isEmpty()
+                              ? QDir::homePath()
+                              : m_engine->workingDirectory();
+    const QString dir = QFileDialog::getExistingDirectory(
+        this,
+        QStringLiteral("选择 Flare 的工作目录（Flare 读写本地文件的根目录）"),
+        start);
+    if (dir.isEmpty())
+        return;
+
+    QSettings(QSettings::IniFormat, QSettings::UserScope,
+              QStringLiteral("flare"), QStringLiteral("flare-client"))
+        .setValue(QStringLiteral("engine/workdir"), dir);
+    m_engine->setWorkingDirectory(dir);
+
+    if (m_workdirButton) {
+        m_workdirButton->setText(workdirText());
+        m_workdirButton->setToolTip(
+            QStringLiteral("当前工作目录：%1\n点击切换（会重启引擎）").arg(dir));
+    }
+
+    // 引擎工具的沙箱根是进程 cwd，运行中改不了 → 重启一次
+    m_engine->stop();
+    if (m_engine->start()) {
+        statusBar()->showMessage(
+            QStringLiteral("工作目录已切换到 %1，引擎已重启").arg(dir), 8000);
+        m_engine->queryVersion();
+        m_engine->queryModels();
+        m_sessions->refresh();
+    } else {
+        statusBar()->showMessage(
+            QStringLiteral("⚠️ 切换工作目录后引擎重启失败"), 8000);
+    }
+}
+
+void MainWindow::setupTray()
+{
+    if (!QSystemTrayIcon::isSystemTrayAvailable())
+        return; // 无托盘环境（部分 Wayland 会话）→ closeEvent 退化为最小化
+
+    QIcon trayIcon = windowIcon();
+    if (trayIcon.isNull())
+        trayIcon = QIcon::fromTheme(QStringLiteral("flare-client"));
+    if (trayIcon.isNull())
+        trayIcon = style()->standardIcon(QStyle::SP_ComputerIcon);
+
+    m_tray = new QSystemTrayIcon(trayIcon, this);
+    m_tray->setToolTip(QStringLiteral("Flare"));
+
+    auto *menu = new QMenu(this);
+    QAction *showAct = menu->addAction(QStringLiteral("显示主窗口"));
+    connect(showAct, &QAction::triggered, this, [this]() {
+        showNormal();
+        raise();
+        activateWindow();
+    });
+    menu->addSeparator();
+    QAction *quitAct = menu->addAction(QStringLiteral("退出 Flare"));
+    connect(quitAct, &QAction::triggered, this, [this]() {
+        m_forceQuit = true;
+        qApp->quit();
+    });
+    m_tray->setContextMenu(menu);
+    connect(m_tray, &QSystemTrayIcon::activated, this,
+            [this](QSystemTrayIcon::ActivationReason reason) {
+                if (reason == QSystemTrayIcon::Trigger
+                    || reason == QSystemTrayIcon::DoubleClick) {
+                    showNormal();
+                    raise();
+                    activateWindow();
+                }
+            });
+    m_tray->show();
+}
+
+void MainWindow::closeEvent(QCloseEvent *event)
+{
+    // 托盘「退出」才真退；否则关窗口只是收起来（用户反馈：误关一次上下文就没了）
+    if (m_forceQuit) {
+        event->accept();
+        return;
+    }
+    event->ignore();
+    if (m_tray && m_tray->isVisible()) {
+        hide();
+        m_tray->showMessage(
+            QStringLiteral("Flare 还在运行"),
+            QStringLiteral("窗口已收进托盘。点托盘图标可恢复，右键「退出 Flare」才彻底关闭。"),
+            QSystemTrayIcon::Information, 4000);
+    } else {
+        showMinimized();
+        statusBar()->showMessage(
+            QStringLiteral("Flare 仍在运行（窗口已最小化）"), 5000);
+    }
 }
 
 MainWindow::~MainWindow() = default;

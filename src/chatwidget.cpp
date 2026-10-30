@@ -10,6 +10,16 @@
 #include <QMessageBox>
 #include <QTimer>
 #include <QDateTime>
+#include <QFileDialog>
+#include <QFileInfo>
+#include <QDir>
+#include <QStandardPaths>
+#include <QApplication>
+#include <QClipboard>
+#include <QMimeData>
+#include <QImage>
+#include <QKeyEvent>
+#include <QKeySequence>
 #include "flametheme.h"
 
 ChatWidget::ChatWidget(EngineBridge *bridge, QWidget *parent)
@@ -37,9 +47,28 @@ ChatWidget::ChatWidget(EngineBridge *bridge, QWidget *parent)
         " font-size:14px; padding:8px; }"));
     layout->addWidget(m_output, 1);
 
+    // M8 附件 chip 行（用户反馈：输入框不能粘贴图片 / 没有读取本地文件的入口）
+    m_attachBar = new QWidget(this);
+    m_attachChips = new QHBoxLayout(m_attachBar);
+    m_attachChips->setContentsMargins(0, 0, 0, 0);
+    m_attachChips->setSpacing(6);
+    m_attachChips->addStretch(1);
+    m_attachBar->setVisible(false);
+    layout->addWidget(m_attachBar);
+
     // 输入行
     auto *inputRow = new QHBoxLayout;
-    m_input->setPlaceholderText(QStringLiteral("输入消息，Enter 发送"));
+    m_attachBtn = new QPushButton(QStringLiteral("📎"), this);
+    m_attachBtn->setToolTip(QStringLiteral("选择本地文件发给 Flare（Ctrl+V 也可粘贴图片）"));
+    m_attachBtn->setCursor(Qt::PointingHandCursor);
+    m_attachBtn->setStyleSheet(QStringLiteral(
+        "QPushButton { background:#ffffff; color:#f97316; border:1px solid #fde6bf;"
+        " border-radius:8px; padding:8px 12px; font-size:15px; }"
+        "QPushButton:hover { background:#ffedd0; }"
+        "QPushButton:pressed { background:#ffe0b0; }"));
+    inputRow->addWidget(m_attachBtn);
+    m_input->setPlaceholderText(
+        QStringLiteral("输入消息，Enter 发送 · Ctrl+V 粘贴图片 · 📎 选本地文件"));
     m_input->setStyleSheet(QStringLiteral(
         "QLineEdit { background:#ffffff; border:1px solid #fde6bf; border-radius:8px;"
         " padding:8px 10px; font-size:14px; }"
@@ -65,6 +94,9 @@ ChatWidget::ChatWidget(EngineBridge *bridge, QWidget *parent)
     connect(m_sendBtn, &QPushButton::clicked, this, &ChatWidget::sendMessage);
     connect(m_input, &QLineEdit::returnPressed, this, &ChatWidget::sendMessage);
     connect(m_stopBtn, &QPushButton::clicked, this, &ChatWidget::stopGeneration);
+    // M8 附件：按钮选本地文件；输入框拦 Ctrl+V 抓剪贴板图片
+    connect(m_attachBtn, &QPushButton::clicked, this, &ChatWidget::pickFiles);
+    m_input->installEventFilter(this);
     connect(m_bridge, &EngineBridge::eventReceived, this, &ChatWidget::onEngineEvent);
 
     // M5-2: 启动即展示跃动欢迎词（火焰渐变 + 呼吸动画）
@@ -77,14 +109,133 @@ ChatWidget::ChatWidget(EngineBridge *bridge, QWidget *parent)
 void ChatWidget::sendMessage()
 {
     const QString text = m_input->text().trimmed();
-    if (text.isEmpty())
+    if (text.isEmpty() && m_attachments.isEmpty())
         return;
     if (m_welcomeVisible)
         stopWelcomeBreathing(); // M5-2: 发送首条消息后收起欢迎词
     endStream(); // 用户新消息前结束未完成流，避免 chunk 串块
-    appendMessage(QStringLiteral("你"), text);
+
+    // M8 附件：引擎 chat.input 目前只收纯字符串（收 [{type:"text"},{type:"image_url"}]
+    // 需要改协议），所以把附件绝对路径附在正文后面 —— 引擎侧有读文件工具，
+    // 拿到路径就能自己打开。协议升级后再改成结构化 segments。
+    QString payload = text;
+    if (!m_attachments.isEmpty()) {
+        QStringList lines;
+        for (const QString &p : m_attachments)
+            lines << QStringLiteral("- %1").arg(p);
+        if (!payload.isEmpty())
+            payload += QStringLiteral("\n\n");
+        payload += QStringLiteral("[本地附件]\n") + lines.join(QStringLiteral("\n"));
+    }
+
+    appendMessage(QStringLiteral("你"),
+                  text.isEmpty() ? QStringLiteral("（发送了附件）") : text);
+    if (!m_attachments.isEmpty()) {
+        QStringList names;
+        for (const QString &p : m_attachments)
+            names << QStringLiteral("📎 %1").arg(QFileInfo(p).fileName());
+        appendMessage(QStringLiteral("附件"), names.join(QStringLiteral("，")));
+    }
+
+    // M8 首条消息 → 交给会话列表当别名，解决「名字看不出会话在干什么」
+    if (!m_firstMessageDone && !text.isEmpty()) {
+        m_firstMessageDone = true;
+        emit firstMessageSent(m_sessionId, text);
+    }
+
     m_input->clear();
-    m_bridge->chat(m_sessionId, text);
+    m_attachments.clear();
+    rebuildAttachChips();
+    m_bridge->chat(m_sessionId, payload);
+}
+
+// ============================================================
+// M8 附件处理：本地文件选择 / 剪贴板图片 / chip 展示与移除
+// ============================================================
+void ChatWidget::pickFiles()
+{
+    const QStringList files = QFileDialog::getOpenFileNames(
+        this, QStringLiteral("选择要发给 Flare 的本地文件"), QDir::homePath(),
+        QStringLiteral("所有文件 (*);;图片 (*.png *.jpg *.jpeg *.webp *.gif *.bmp);;"
+                       "文本 (*.txt *.md *.log *.json *.yaml *.yml *.csv)"));
+    for (const QString &f : files)
+        addAttachment(f);
+}
+
+void ChatWidget::addAttachment(const QString &path)
+{
+    if (path.isEmpty() || !QFileInfo::exists(path))
+        return;
+    const QString abs = QFileInfo(path).absoluteFilePath();
+    if (!m_attachments.contains(abs))
+        m_attachments << abs;
+    rebuildAttachChips();
+}
+
+void ChatWidget::removeAttachment(const QString &path)
+{
+    m_attachments.removeAll(path);
+    rebuildAttachChips();
+}
+
+void ChatWidget::rebuildAttachChips()
+{
+    if (!m_attachChips || !m_attachBar)
+        return;
+    while (QLayoutItem *it = m_attachChips->takeAt(0)) {
+        if (QWidget *w = it->widget())
+            w->deleteLater();
+        delete it;
+    }
+    for (const QString &p : m_attachments) {
+        auto *chip = new QPushButton(
+            QStringLiteral("🖼 %1  ✕").arg(QFileInfo(p).fileName()), m_attachBar);
+        chip->setCursor(Qt::PointingHandCursor);
+        chip->setToolTip(p);
+        chip->setStyleSheet(QStringLiteral(
+            "QPushButton { background:#fff3e0; color:#b45309; border:1px solid #fcd9a5;"
+            " border-radius:12px; padding:4px 10px; font-size:12px; }"
+            "QPushButton:hover { background:#ffe3bf; }"));
+        const QString path = p;
+        connect(chip, &QPushButton::clicked, this, [this, path]() {
+            removeAttachment(path);
+        });
+        m_attachChips->addWidget(chip);
+    }
+    m_attachChips->addStretch(1);
+    m_attachBar->setVisible(!m_attachments.isEmpty());
+}
+
+bool ChatWidget::eventFilter(QObject *watched, QEvent *event)
+{
+    // M8: 输入框上 Ctrl+V —— 剪贴板是图片就存 png 挂成附件，否则交给 QLineEdit 走文本粘贴
+    if (watched == m_input && event->type() == QEvent::KeyPress) {
+        auto *ke = static_cast<QKeyEvent *>(event);
+        if (ke->matches(QKeySequence::Paste)) {
+            const QMimeData *md = QApplication::clipboard()
+                                      ? QApplication::clipboard()->mimeData()
+                                      : nullptr;
+            if (md && md->hasImage()) {
+                const QImage img = qvariant_cast<QImage>(md->imageData());
+                if (!img.isNull()) {
+                    QString dir = QStandardPaths::writableLocation(
+                        QStandardPaths::CacheLocation);
+                    if (dir.isEmpty())
+                        dir = QDir::tempPath() + QStringLiteral("/flare-client");
+                    dir += QStringLiteral("/attachments");
+                    QDir().mkpath(dir);
+                    const QString path = QStringLiteral("%1/paste-%2.png")
+                                             .arg(dir)
+                                             .arg(QDateTime::currentMSecsSinceEpoch());
+                    if (img.save(path, "PNG")) {
+                        addAttachment(path);
+                        return true; // 已作为附件处理，不再插入文本
+                    }
+                }
+            }
+        }
+    }
+    return QWidget::eventFilter(watched, event);
 }
 
 void ChatWidget::setSession(const QString &sessionId)
@@ -97,6 +248,9 @@ void ChatWidget::setSession(const QString &sessionId)
         m_bridge->cancel(m_sessionId);
     m_sessionId = sessionId;
     m_streaming = false;
+    m_firstMessageDone = false; // M8：新会话重新计首条消息（历史非空时由 renderHistory 置回 true）
+    m_attachments.clear();
+    rebuildAttachChips();
     m_stopBtn->setVisible(false);
     m_output->clear();
     m_output->setPlaceholderText(QStringLiteral("加载会话历史…"));
@@ -124,7 +278,11 @@ void ChatWidget::onEngineEvent(const QJsonObject &obj)
     // M6-4 串会话防护：引擎所有会话事件都带 sessionId；切会话后
     // 旧会话的 text/done/messages 等事件必须忽略，否则串到新会话消息区。
     // （不带 sessionId 的事件视为老协议/测试兼容，放行）
-    if (type != QLatin1String(FlareEvent::Models) && !eventForSession(obj))
+    // error 帧可能不带 sessionId（协议/配置级错误，如未配置 API key）——
+    // 必须放行，否则引擎报错时界面一片安静，用户以为消息发出去了。
+    if (type != QLatin1String(FlareEvent::Models)
+        && type != QLatin1String(FlareEvent::Error)
+        && !eventForSession(obj))
         return;
 
     if (type == QLatin1String(FlareEvent::Messages)) {
@@ -151,7 +309,16 @@ void ChatWidget::onEngineEvent(const QJsonObject &obj)
     } else if (type == QLatin1String(FlareEvent::Error)) {
         m_stopBtn->setVisible(false);
         endStream();
-        appendMessage(QStringLiteral("⚠️ Flare"), obj.value(QStringLiteral("content")).toString());
+        // 引擎两种 error 帧字段不同：stream 错误用 content，协议错误用 message —— 都要认
+        QString msg = obj.value(QStringLiteral("content")).toString();
+        if (msg.isEmpty())
+            msg = obj.value(QStringLiteral("message")).toString();
+        if (msg.isEmpty())
+            msg = QStringLiteral("引擎返回了一个没有说明的错误");
+        if (msg.contains(QStringLiteral("API key")) || msg.contains(QStringLiteral("密钥"))
+            || msg.contains(QStringLiteral("api_key")))
+            msg += QStringLiteral("\n\n👉 在左下角「⚙️ 设置」里填入 API Key 后重试。");
+        appendMessage(QStringLiteral("⚠️ Flare"), msg);
     } else if (type == QLatin1String(FlareEvent::ToolCall)) {
         m_stopBtn->setVisible(false);
         endStream();
@@ -401,6 +568,7 @@ void ChatWidget::renderHistory(const QJsonArray &messages)
         showWelcomeBanner();
         return;
     }
+    m_firstMessageDone = true; // M8：已有历史 → 不再用新消息覆盖会话别名
     for (const QJsonValue &v : messages) {
         const QJsonObject m = v.toObject();
         const QString role = m.value(QStringLiteral("role")).toString();
