@@ -89,7 +89,7 @@ QString tableHtml(const QList<QStringList> &rows)
         cols = qMax(cols, r.size());
 
     QString h = QStringLiteral(
-        "<table cellspacing=\"0\" cellpadding=\"5\" border=\"1\" width=\"100%\">");
+        "<table cellspacing=\"0\" cellpadding=\"7\" border=\"1\" width=\"100%\">");
     for (int i = 0; i < rows.size(); ++i) {
         const bool header = (i == 0);
         const QStringList &row = rows.at(i);
@@ -162,17 +162,35 @@ QString MarkdownLite::toHtml(const QString &text)
             continue;
         }
 
+        // 列表：连续的 -/*/+ 行合成一个真 <ul>。原来用「• 」前缀塞进同一个
+        // 段落，长条目一折行第二行就顶到最左边，看着像两个条目。
+        if (bulletRe.match(trimmed).hasMatch()) {
+            QString items;
+            while (i < lines.size()) {
+                const QString cur = lines.at(i).trimmed();
+                if (cur.isEmpty())
+                    break;
+                const auto item = bulletRe.match(cur);
+                if (!item.hasMatch())
+                    break;
+                items += QStringLiteral("<li>%1</li>").arg(inlineHtml(item.captured(1)));
+                ++i;
+            }
+            --i; // 外层 for 还会 ++i
+            if (!out.isEmpty())
+                out += QStringLiteral("<br/>");
+            out += QStringLiteral("<ul style=\"margin:0;\">%1</ul>").arg(items);
+            continue;
+        }
+
         QString line;
         const auto heading = headingRe.match(trimmed);
         if (heading.hasMatch()) {
             line = QStringLiteral("<b style=\"font-size:15px;\">%1</b>")
                        .arg(inlineHtml(heading.captured(2)));
         } else {
-            const auto bullet = bulletRe.match(trimmed);
-            if (bullet.hasMatch())
-                line = QStringLiteral("• ") + inlineHtml(bullet.captured(1));
-            else
-                line = inlineHtml(trimmed);
+            // 连续 bullet 行已在上面的分支里合成 <ul>，走到这里的一定是正文。
+            line = inlineHtml(trimmed);
         }
 
         if (!out.isEmpty())

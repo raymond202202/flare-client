@@ -3,12 +3,15 @@
 
 #include <QWidget>
 #include <QTextEdit>
+
+#include "markdownview.h"
 #include <QLineEdit>
 #include <QPushButton>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QStringList>
 #include <QHash>
+#include <QDateTime>
 #include <QUrl>
 #include <memory>
 #include "engine_bridge.h"
@@ -71,6 +74,8 @@ public slots:
     void respondConfirm(const QString &id, const QString &decision);
     // M4-5 易用性：停止当前生成（发 cancel 协议）
     void stopGeneration();
+    // M5-5 历史消息渲染（引擎 messages 事件进来后逐条画到消息区）
+    void renderHistory(const QJsonArray &messages);
 
 protected:
     // M8 粘贴图片：QLineEdit 不支持富内容，在输入框上拦 Ctrl+V，
@@ -99,7 +104,9 @@ private:
     void addAttachment(const QString &path);
     void removeAttachment(const QString &path);
     void rebuildAttachChips();
-    void appendMessage(const QString &who, const QString &text);
+    // M15-3：stamp 为空表示不显示时间（系统提示不挂时间戳）
+    void appendMessage(const QString &who, const QString &text,
+                       const QString &stamp = QString());
     // M3-3 流式渲染：text 事件按 chunk 增量追加到当前消息块
     void appendStreamChunk(const QString &chunk);
     void endStream();
@@ -112,7 +119,12 @@ private:
     void updateWelcomeBreath();
     // M5-5 加载会话历史（get_messages → messages 事件 → 渲染）
     void loadHistory(const QString &sessionId);
-    void renderHistory(const QJsonArray &messages);
+    // M15-4：历史里的 Flare 回复同样要过 MarkdownLite —— 打开旧会话看到的是
+    // 排版好的答案（代码块、列表、表格），不是原始 markdown 文本。
+    void appendRenderedReply(const QString &markdown, const QString &stamp = QString());
+    // M15-5：把渲染结果写进文档。以代码块/列表/表格开头的回答必须先断开段落，
+    // 否则块的第一行会被吸进「Flare：」那一行（既没底色也不在复制范围里）。
+    static void insertMarkdown(QTextCursor &cursor, const QString &markdown);
     // M6-4 串会话防护：事件带 sessionId 时校验是否属于当前会话
     // （引擎所有会话事件均带 sessionId；不带的老协议/测试视为放行）
     bool eventForSession(const QJsonObject &obj) const;
@@ -123,7 +135,7 @@ private:
     bool m_confirmScheduled = false;
 
     EngineBridge *m_bridge;
-    QTextEdit *m_output;
+    MarkdownView *m_output;   // M15：带代码块「复制」按钮的消息区
     QLineEdit *m_input;
     QPushButton *m_sendBtn;
     QPushButton *m_stopBtn = nullptr;
@@ -131,6 +143,8 @@ private:
     bool m_streaming = false; // 是否处于 AI 回复流中（chunk 追加目标块）
     // M9: 本轮流式正文在文档里的起始位置（endStream 时把这段纯文本换成渲染后的富文本）
     int m_streamStartPos = -1;
+    // M15-3：本轮回复的开始时刻（= 这条消息的时间，收流后打在末尾）
+    QDateTime m_streamStartedAt;
     QTimer *m_breathTimer = nullptr; // M5-2 欢迎词呼吸动画
     bool m_welcomeVisible = false;   // 欢迎词是否显示中
 

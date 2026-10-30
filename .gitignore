@@ -28,3 +28,6 @@ packaging/dist/
 # 原生壳构建产物与内置引擎（二进制不入库）
 native/*/engine/
 native/*/build/
+
+# 本地打包时现编的引擎二进制（不入库，CI 各自现编）
+/dist/

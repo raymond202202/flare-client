@@ -119,8 +119,24 @@ private slots:
         const QString html = MarkdownLite::toHtml(md);
 
         QVERIFY(html.contains(QStringLiteral("font-size:15px")));
-        QCOMPARE(html.count(QStringLiteral("• ")), 2);
+        // 列表必须是真 <ul>/<li>：靠缩进渲染，长条目折行才会悬挂对齐
+        QVERIFY(html.contains(QStringLiteral("<ul")));
+        QCOMPARE(html.count(QStringLiteral("<li>")), 2);
+        QVERIFY(!html.contains(QStringLiteral("• ")));
         QVERIFY(html.contains(QStringLiteral("<b>重点</b>")));
+    }
+
+    // 列表遇到空行就结束：后面的正文不能被吞成列表项
+    void blankLineEndsList()
+    {
+        const QString md = QStringLiteral("- 第一条\n"
+                                          "- 第二条\n"
+                                          "\n"
+                                          "结论：都不用。\n");
+        const QString html = MarkdownLite::toHtml(md);
+        QCOMPARE(html.count(QStringLiteral("<li>")), 2);
+        QVERIFY(html.contains(QStringLiteral("结论")));
+        QVERIFY(!html.contains(QStringLiteral("<li>结论")));
     }
 };
 

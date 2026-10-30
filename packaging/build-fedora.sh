@@ -11,8 +11,29 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# 内置引擎：GUI 包必须自带引擎，终端用户不该自己装 Node 或对版本。
+# 这里从同级 flare 仓库现编，避免沿用 CMakeCache 里上一次的旧二进制
+# （曾经因为缓存里指到 /tmp/flare-engine，打出来的 RPM 内置的是过期引擎：
+#  引擎不下发 createdAt，消息时间戳整排消失）。
+CLIENT_VER="$(grep -m1 'project(.*VERSION' CMakeLists.txt | sed 's/[^0-9.]*//g')"
+ENGINE_BIN="${FLARE_ENGINE_BINARY:-}"
+if [ -z "$ENGINE_BIN" ] && [ -f ../flare/cmd/flare/main.go ]; then
+  mkdir -p dist
+  ENGINE_BIN="$PWD/dist/flare-engine-linux-$(uname -m)"
+  echo "==> 构建引擎 (../flare, 版本 $CLIENT_VER)"
+  ( cd ../flare && PATH=/usr/bin:$PATH \
+      go build -trimpath -ldflags "-s -w -X main.Version=$CLIENT_VER" \
+      -o "$ENGINE_BIN" ./cmd/flare )
+fi
+if [ -n "$ENGINE_BIN" ]; then
+  [ -x "$ENGINE_BIN" ] || { echo "!! 引擎不可执行: $ENGINE_BIN" >&2; exit 1; }
+  echo "==> 内置引擎: $ENGINE_BIN"
+else
+  echo "!! 未找到引擎，GUI 包装完只能用外部 flare —— 仅限开发调试" >&2
+fi
+
 echo "==> 配置 CMake (Release)"
-cmake -B build-fedora -DCMAKE_BUILD_TYPE=Release
+cmake -B build-fedora -DCMAKE_BUILD_TYPE=Release ${ENGINE_BIN:+-DFLARE_ENGINE_BINARY="$ENGINE_BIN"}
 
 echo "==> 构建"
 cmake --build build-fedora -j"$(nproc)"

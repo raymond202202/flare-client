@@ -228,8 +228,12 @@ void SessionListWidgetTest::sessionsGroupedByDay()
     SessionListWidget w(&bridge);
 
     const QDateTime now = QDateTime::currentDateTime();
+    // M15-3：引擎下发的时间一律是 RFC3339 UTC（带 Z）。这里按同一口径造数据：
+    // 本地时刻 → 转 UTC 再序列化，解析回来还是同一个瞬间。
+    // 以前这里写的是 toString(ISODateWithMs) 的裸串，没有时区标记；
+    // 现在裸串按 UTC 解释，会让「今天」的会话被推到明天、分组整个错位。
     const auto iso = [](const QDateTime &dt) {
-        return dt.toString(Qt::ISODateWithMs);
+        return dt.toUTC().toString(Qt::ISODate);
     };
 
     QJsonArray arr;
@@ -267,9 +271,9 @@ void SessionListWidgetTest::searchViewHasNoSectionHeaders()
     const QDateTime now = QDateTime::currentDateTime();
     QJsonArray arr;
     arr.append(QJsonObject{{"id", "s1"}, {"title", "主题色讨论"},
-                           {"updatedAt", now.toString(Qt::ISODateWithMs)}});
+                           {"updatedAt", now.toUTC().toString(Qt::ISODate)}});
     arr.append(QJsonObject{{"id", "s2"}, {"title", "主题色笔记"},
-                           {"updatedAt", now.addDays(-40).toString(Qt::ISODateWithMs)}});
+                           {"updatedAt", now.addDays(-40).toUTC().toString(Qt::ISODate)}});
     w.onEngineEvent(QJsonObject{{"type", "sessions"}, {"sessions", arr}});
     QVERIFY(!sectionHeaders(w.list()).isEmpty());
 
@@ -299,16 +303,30 @@ void SessionListWidgetTest::archivedEventPopulatesList()
 // 跨年必须带年份 —— 否则「03-15」到底是今年还是去年，用户只能点进去猜。
 void SessionListWidgetTest::shortStampKeepsYearAcrossYears()
 {
-    const QDateTime now = QDateTime::fromString(QStringLiteral("2026-10-30T14:20:00.000"),
-                                                Qt::ISODateWithMs);
-    QVERIFY(now.isValid());
-    QCOMPARE(SessionListWidget::shortStamp(QStringLiteral("2026-10-30T09:05:00.000"), now),
-             QStringLiteral("09:05"));
-    QCOMPARE(SessionListWidget::shortStamp(QStringLiteral("2026-08-13T09:05:00.000"), now),
-             QStringLiteral("08-13"));
-    QCOMPARE(SessionListWidget::shortStamp(QStringLiteral("2025-03-15T09:05:00.000"), now),
-             QStringLiteral("2025-03-15"));
-    // 非法时间不崩，退化成日期前缀
+    // M15-3：这个测试原来用「无时区标记」的串（"2026-10-30T09:05:00.000"）当本地时间，
+    // 断言出 "09:05"。现在裸串一律按 UTC 解释，那么写法必须改成与时区无关的：
+    // 用本地时刻构造 → 转 UTC 带 Z 下发 → 解析回来还是原来那个本地时刻。
+    // 这样 CI 跑在 UTC、用户跑在 +08:00，结论一致。
+    const QDateTime now = QDateTime(QDate(2026, 10, 30), QTime(14, 20));
+    const auto utcIso = [](const QDateTime &dt) { return dt.toUTC().toString(Qt::ISODate); };
+
+    const QDateTime sameDay = QDateTime(QDate(2026, 10, 30), QTime(9, 5));
+    QCOMPARE(SessionListWidget::shortStamp(utcIso(sameDay), now),
+             sameDay.toString(QStringLiteral("HH:mm")));
+
+    const QDateTime thisYear = QDateTime(QDate(2026, 8, 13), QTime(9, 5));
+    QCOMPARE(SessionListWidget::shortStamp(utcIso(thisYear), now), QStringLiteral("08-13"));
+
+    const QDateTime lastYear = QDateTime(QDate(2025, 3, 15), QTime(9, 5));
+    QCOMPARE(SessionListWidget::shortStamp(utcIso(lastYear), now), QStringLiteral("2025-03-15"));
+
+    // M15-3 回归：裸串（无时区标记）必须与同一时刻的 Z 串得出一样的结果，
+    // 且都不是「按本地时间解释」——以前正是这一步差了 8 小时。
+    const QString bare = QStringLiteral("2026-10-30T09:05:00.000");
+    QCOMPARE(SessionListWidget::shortStamp(bare, now),
+             SessionListWidget::shortStamp(bare + QStringLiteral("Z"), now));
+
+    // 非法时间不崩，原样返回
     QCOMPARE(SessionListWidget::shortStamp(QStringLiteral("2026-13-99"), now),
              QStringLiteral("2026-13-99"));
 }
@@ -322,7 +340,7 @@ void SessionListWidgetTest::keyboardNavSwitchesSessionAndSkipsHeaders()
     SessionListWidget w(&bridge);
 
     const QDateTime now = QDateTime::currentDateTime();
-    const auto iso = [](const QDateTime &dt) { return dt.toString(Qt::ISODateWithMs); };
+    const auto iso = [](const QDateTime &dt) { return dt.toUTC().toString(Qt::ISODate); };
     QJsonArray arr;
     arr.append(QJsonObject{{"id", "s-today"}, {"title", "今天聊的"}, {"updatedAt", iso(now)}});
     arr.append(QJsonObject{{"id", "s-yest"}, {"title", "昨天聊的"}, {"updatedAt", iso(now.addDays(-1))}});
@@ -358,7 +376,7 @@ void SessionListWidgetTest::searchBoxArrowDownJumpsToList()
     const QDateTime now = QDateTime::currentDateTime();
     QJsonArray arr;
     arr.append(QJsonObject{{"id", "r-1"}, {"title", "报错怎么读"},
-                           {"updatedAt", now.toString(Qt::ISODateWithMs)}});
+                           {"updatedAt", now.toUTC().toString(Qt::ISODate)}});
     w.onEngineEvent(QJsonObject{{"type", "sessions"}, {"sessions", arr}});
     QCOMPARE(w.count(), 1);
 
@@ -386,7 +404,7 @@ void SessionListWidgetTest::initTestCase()
 void SessionListWidgetTest::pinnedSessionSticksToTopAndSurvivesRestart()
 {
     const QDateTime now = QDateTime::currentDateTime();
-    const auto iso = [](const QDateTime &dt) { return dt.toString(Qt::ISODateWithMs); };
+    const auto iso = [](const QDateTime &dt) { return dt.toUTC().toString(Qt::ISODate); };
     QJsonArray arr;
     arr.append(QJsonObject{{"id", "p-new"}, {"title", "今天聊的"}, {"updatedAt", iso(now)}});
     arr.append(QJsonObject{{"id", "p-mid"}, {"title", "三天前聊的"}, {"updatedAt", iso(now.addDays(-3))}});

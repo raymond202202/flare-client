@@ -23,7 +23,7 @@ int main(int argc, char *argv[])
         if (auto *sessions = w.findChild<SessionListWidget *>()) {
             const QDateTime now = QDateTime::currentDateTime();
             const auto iso = [](const QDateTime &dt) {
-                return dt.toString(Qt::ISODateWithMs);
+                return dt.toUTC().toString(Qt::ISODate);
             };
             QJsonArray arr;
             arr.append(QJsonObject{{"id", "demo-today"}, {"title", "今天调的主题色"},

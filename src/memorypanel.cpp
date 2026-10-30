@@ -1,4 +1,5 @@
 #include "memorypanel.h"
+#include "flaretime.h"
 
 #include <QLabel>
 #include <QVBoxLayout>
@@ -57,7 +58,10 @@ void MemoryPanel::applyMemories(const QJsonArray &memories)
         if (content.isEmpty())
             continue;
         const QString type = m.value(QStringLiteral("type")).toString();
-        const QString created = m.value(QStringLiteral("created_at")).toString();
+        // M15-3：记忆面板原来直接把数据库的裸串贴上去（"2026-10-30 07:48:06"
+        // 看着像本地时间，其实是 UTC），现在跟其他地方用同一套本地时区口径。
+        const QString created = FlareTime::fullStamp(
+            m.value(QStringLiteral("created_at")).toString());
         QString label = content;
         if (!type.isEmpty() && type != QLatin1String("note"))
             label.prepend(QStringLiteral("[%1] ").arg(type));

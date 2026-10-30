@@ -1,5 +1,9 @@
 #include "chatwidget.h"
 #include "markdownlite.h"
+#include "flaretime.h"
+
+// M15-3：时间戳行（定义在 appendMessage 之前，endStream 也要用）
+static QString stampRow(const QString &stamp);
 
 #include <QLabel>
 #include <QJsonValue>
@@ -57,7 +61,7 @@ bool looksLikeImage(const QFileInfo &fi)
 ChatWidget::ChatWidget(EngineBridge *bridge, QWidget *parent)
     : QWidget(parent)
     , m_bridge(bridge)
-    , m_output(new QTextEdit(this))
+    , m_output(new MarkdownView(this))
     , m_input(new QLineEdit(this))
     , m_sendBtn(new QPushButton(QStringLiteral("发送"), this))
     , m_stopBtn(new QPushButton(QStringLiteral("⏹ 停止"), this))
@@ -256,7 +260,8 @@ void ChatWidget::sendMessage()
     }
 
     appendMessage(QStringLiteral("你"),
-                  text.isEmpty() ? QStringLiteral("（发送了附件）") : text);
+                  text.isEmpty() ? QStringLiteral("（发送了附件）") : text,
+                  FlareTime::messageStampAt(QDateTime::currentDateTime()));
     if (!m_attachments.isEmpty()) {
         QStringList names;
         for (const QString &p : m_attachments)
@@ -618,6 +623,7 @@ void ChatWidget::appendStreamChunk(const QString &chunk)
     cursor.movePosition(QTextCursor::End);
     if (!m_streaming) {
         m_streaming = true;
+        m_streamStartedAt = QDateTime::currentDateTime();
         cursor.insertBlock();
         QTextCharFormat label;
         label.setForeground(FlameTheme::orange());
@@ -656,7 +662,18 @@ void ChatWidget::endStream()
         return;
     const bool atBottom = nearBottom();
     const int saved = m_output->verticalScrollBar()->value();
-    cursor.insertHtml(MarkdownLite::toHtml(raw));
+    insertMarkdown(cursor, raw);
+    // M15-3：这条回复的时间 = 开始生成的时刻（不是收流那一刻 —— 长回答的
+    // 生成时间可能跨好几分钟，用结束时间会让同一个回答的时间戳前后不一致）
+    if (!m_streamStartedAt.isValid())
+        m_streamStartedAt = QDateTime::currentDateTime();
+    const QString tail = stampRow(FlareTime::messageStampAt(m_streamStartedAt));
+    m_streamStartedAt = QDateTime();
+    if (!tail.isEmpty()) {
+        QTextCursor tailCursor(m_output->document());
+        tailCursor.movePosition(QTextCursor::End);
+        tailCursor.insertHtml(tail);
+    }
     if (atBottom) {
         scrollToBottom();
     } else {
@@ -780,7 +797,21 @@ void ChatWidget::showEngineNotice(const QString &text)
     appendMessage(QStringLiteral("⚠️ 引擎"), text);
 }
 
-void ChatWidget::appendMessage(const QString &who, const QString &text)
+// M15-3：时间戳统一口径（本地时区、同样的格式），独立一行右对齐灰小字。
+// 不跟在正文尾部：回答以代码块结尾时时间会被吸进代码块里 —— 带底色、还会
+// 被「复制」按钮一起复制走。用一行 table 收尾永远自成一段，污染不到正文。
+static QString stampRow(const QString &stamp)
+{
+    if (stamp.isEmpty())
+        return QString();
+    return QStringLiteral(
+               "<table width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\">"
+               "<tr><td align=\"right\"><span style=\"color:#b09775;font-size:small;\">%1"
+               "</span></td></tr></table>")
+        .arg(stamp.toHtmlEscaped());
+}
+
+void ChatWidget::appendMessage(const QString &who, const QString &text, const QString &stamp)
 {
     const bool atBottom = nearBottom();
     const int saved = m_output->verticalScrollBar()->value();
@@ -807,10 +838,65 @@ void ChatWidget::appendMessage(const QString &who, const QString &text)
                    "<p align=\"center\"><span style=\"color:#8a6a3b;\">%1 %2</span></p>")
                    .arg(who.toHtmlEscaped(), body);
     }
+    // 系统提示（⚠️ / ⏹）不挂时间：它们不是对话内容
+    if (who == QStringLiteral("你") || who == QStringLiteral("Flare"))
+        html += stampRow(stamp);
 
     m_output->append(html);
     if (!atBottom)
         m_output->verticalScrollBar()->setValue(saved); // 守住用户当前阅读位置
+    followOrHint(atBottom);
+}
+
+// M15-5：回答是否以块级元素（代码块/列表/表格/标题/引用）开头。
+// 这类回答不能紧贴着「Flare：」标签写，否则首行会跟标签挤在同一段。
+static bool startsWithBlockElement(const QString &markdown)
+{
+    const QString t = markdown.trimmed();
+    if (t.isEmpty())
+        return false;
+    static const QRegularExpression bulletRe(QStringLiteral("^[-*+]\\s+"));
+    return t.startsWith(QLatin1String("```")) || t.startsWith(QLatin1String("~~~"))
+           || t.startsWith(QLatin1Char('|')) || t.startsWith(QLatin1Char('#'))
+           || t.startsWith(QLatin1Char('>')) || bulletRe.match(t).hasMatch();
+}
+
+void ChatWidget::insertMarkdown(QTextCursor &cursor, const QString &markdown)
+{
+    // 回答以代码块/列表/表格开头时，「Flare：」标签和块首行会挤在同一段
+    // （QTextHtmlImporter 把 <pre> 的第一行留在当前段，且不打
+    // nonBreakableLines 标记），首行于是既没有代码底色、也不在复制范围里。
+    // 实测（probe_md2.cpp）：必须在**同一次** insertHtml 里前置 <br/>；
+    // 分两次调用无效，insertBlock() 也无效。
+    const QString html = MarkdownLite::toHtml(markdown);
+    cursor.insertHtml(startsWithBlockElement(markdown)
+                          ? QStringLiteral("<br/>") + html
+                          : html);
+}
+
+// M15-4 历史回复渲染：和流式收尾（endStream）走同一套 MarkdownLite，
+// 保证「刚收到的回答」和「翻回去看的历史回答」长得一模一样。
+void ChatWidget::appendRenderedReply(const QString &markdown, const QString &stamp)
+{
+    const bool atBottom = nearBottom();
+    const int saved = m_output->verticalScrollBar()->value();
+    QTextCursor cursor(m_output->document());
+    cursor.movePosition(QTextCursor::End);
+    if (!m_output->document()->isEmpty())
+        cursor.insertBlock();
+    QTextCharFormat label;
+    label.setForeground(FlameTheme::orange());
+    label.setFontWeight(QFont::Bold);
+    cursor.insertText(QStringLiteral("Flare："), label);
+    insertMarkdown(cursor, markdown);
+    const QString tail = stampRow(stamp);
+    if (!tail.isEmpty())
+        cursor.insertHtml(tail);
+    m_output->document()->clearUndoRedoStacks();
+    if (atBottom)
+        scrollToBottom();
+    else
+        m_output->verticalScrollBar()->setValue(saved);
     followOrHint(atBottom);
 }
 
@@ -957,10 +1043,18 @@ void ChatWidget::renderHistory(const QJsonArray &messages)
         const QString content = m.value(QStringLiteral("content")).toString();
         if (content.isEmpty())
             continue;
+        // M15-3：历史消息用引擎给的 createdAt（RFC3339 UTC，已统一到本地时区）
+        const QString stamp = FlareTime::messageStamp(
+            m.value(QStringLiteral("createdAt")).toString());
         if (role == QLatin1String("user")) {
-            appendMessage(QStringLiteral("你"), content);
+            appendMessage(QStringLiteral("你"), content, stamp);
+        } else if (role == QLatin1String("assistant") || role == QLatin1String("Flare")) {
+            // M15-4：回答一律按 markdown 渲染。以前这里走 appendMessage（纯文本、
+            // 换行转 <br/>），打开旧会话满屏都是 ``` 和 ** 原文，跟流式对话里的
+            // 排版完全两个样子 —— 同一个回答，翻回去看却认不出来。
+            appendRenderedReply(content, stamp);
         } else {
-            appendMessage(QStringLiteral("Flare"), content);
+            appendMessage(role.isEmpty() ? QStringLiteral("系统") : role, content);
         }
     }
 }

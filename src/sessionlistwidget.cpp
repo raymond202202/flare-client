@@ -1,4 +1,5 @@
 #include "sessionlistwidget.h"
+#include "flaretime.h"
 
 #include <QLabel>
 #include <QHBoxLayout>
@@ -48,17 +49,12 @@ static bool isPlaceholderTitle(const QString &title)
 //   今天 → HH:mm（标题已说明是哪天）
 //   今年 → MM-dd
 //   跨年 → yyyy-MM-dd（只写 03-15 谁都分不清是哪一年的三月十五）
+// M15-3：解析与格式统一交给 FlareTime —— 引擎给的是 RFC3339 UTC，老数据可能
+// 是 sqlite 的裸串（无时区标记但本身就是 UTC）。以前这里直接 Qt::ISODateWithMs
+// 解析，裸串被当成本地时间，刚聊完的会话显示成 8 小时前。
 QString SessionListWidget::shortStamp(const QString &iso, const QDateTime &now)
 {
-    const QDateTime dt = QDateTime::fromString(iso, Qt::ISODateWithMs);
-    if (!dt.isValid())
-        return iso.left(10);
-    const QDate today = now.date();
-    if (dt.date() == today)
-        return dt.toString(QStringLiteral("HH:mm"));
-    if (dt.date().year() == today.year())
-        return dt.toString(QStringLiteral("MM-dd"));
-    return dt.toString(QStringLiteral("yyyy-MM-dd"));
+    return FlareTime::listStamp(iso, now);
 }
 
 static QString shortTime(const QString &iso)
@@ -71,18 +67,8 @@ static QString shortTime(const QString &iso)
 // 纯函数，便于单测（不依赖当前时间，now 由调用方给）。
 static QString sessionSection(const QString &iso, const QDateTime &now)
 {
-    const QDateTime dt = QDateTime::fromString(iso, Qt::ISODateWithMs);
-    if (!dt.isValid())
-        return QStringLiteral("更早");
-    const QDate today = now.date();
-    const QDate d = dt.date();
-    if (d == today)
-        return QStringLiteral("今天");
-    if (d == today.addDays(-1))
-        return QStringLiteral("昨天");
-    if (d >= today.addDays(-6))
-        return QStringLiteral("最近 7 天");
-    return QStringLiteral("更早");
+    // M15-3：同上，按本地时区判定归属哪天，避免凌晨的会话被分进「昨天」
+    return FlareTime::section(iso, now);
 }
 
 // 按像素宽度截断。按字符数截断（left(18)）在 220px 侧栏里会让 18 个汉字

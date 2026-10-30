@@ -68,6 +68,12 @@ private slots:
     void scrollFollowsOnlyAtBottom();
     void newContentHintWhenScrolledUp();
     void atLatestPositionGuardsLayoutJitter();
+    // M15 打磨：流式回复里的代码块要能一键复制
+    void streamedReplyGetsCopyButton();
+    // M15-4：翻回去看的历史回复也要是排版好的，不是原始 markdown 文本
+    void historyReplyIsRendered();
+    // M15-5：回答以代码块开头时，首行不能被「Flare：」标签吃掉
+    void replyStartingWithCodeBlockKeepsFirstLine();
 };
 
 // 构造一个 text 事件
@@ -663,6 +669,90 @@ void ChatWidgetTest::markdownUnclosedCodeBlockStillShows()
     const QString out = w.outputText();
     QVERIFY2(out.contains(QStringLiteral("make all")), qPrintable(out));
     QVERIFY2(!out.contains(QStringLiteral("```")), qPrintable(out));
+}
+
+// M15：走真实链路（流式 text 事件 → done → 渲染）之后，代码块的复制按钮得好用
+void ChatWidgetTest::streamedReplyGetsCopyButton()
+{
+    EngineBridge bridge;
+    ChatWidget w(&bridge);
+    w.resize(760, 560);
+    w.show();
+
+    w.onEngineEvent(textEvent(QStringLiteral("**跑测试**\n```bash\nmake -j8\nmake test\n```\n就这样。")));
+    w.onEngineEvent(QJsonObject{{"type", "done"}});
+    QCoreApplication::processEvents();
+
+    auto *view = qobject_cast<MarkdownView *>(w.output());
+    QVERIFY2(view, "消息区必须还是 MarkdownView，否则复制按钮整套都没了");
+    QCOMPARE(view->codeRanges().size(), 1);
+    QCOMPARE(view->codeText(0), QStringLiteral("make -j8\nmake test"));
+
+    const QRect button = view->copyButtonRect(0);
+    QVERIFY2(!button.isEmpty(), "流式渲染出来的代码块也要有可点的复制按钮");
+
+    QApplication::clipboard()->setText(QStringLiteral("<sentinel>"));
+    QTest::mouseClick(view->viewport(), Qt::LeftButton, Qt::NoModifier, button.center());
+    QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("make -j8\nmake test"));
+}
+
+// M15-4：历史会话加载必须走渲染，不能把 markdown 原文糊在屏幕上。
+// 这条曾经真的坏过：流式对话里代码块是有底色、有复制按钮的，
+// 切回同一个会话却变成「```bash」和一堆竖线表格 —— 同一个回答两个样子。
+void ChatWidgetTest::historyReplyIsRendered()
+{
+    EngineBridge bridge;
+    ChatWidget w(&bridge);
+    w.resize(760, 560);
+    w.show();
+
+    const QString reply =
+        QStringLiteral("跑这两步：\n```bash\nmake -j8\nmake test\n```\n"
+                       "**注意**：先装依赖。\n- 第一件事\n- 第二件事");
+    const QJsonArray messages{
+        QJsonObject{{"role", "user"}, {"content", "怎么编译？"}},
+        QJsonObject{{"role", "assistant"}, {"content", reply}},
+    };
+    w.renderHistory(messages);
+    QCoreApplication::processEvents();
+
+    auto *view = qobject_cast<MarkdownView *>(w.output());
+    QVERIFY(view);
+    // 代码块被认出来了 → 底色、复制按钮才存在
+    QCOMPARE(view->codeRanges().size(), 1);
+    QCOMPARE(view->codeText(0), QStringLiteral("make -j8\nmake test"));
+    QVERIFY2(!view->copyButtonRect(0).isEmpty(), "历史回复里的代码块也要有复制按钮");
+
+    const QString out = w.outputText();
+    QVERIFY2(!out.contains(QStringLiteral("```")), qPrintable(out));
+    QVERIFY2(!out.contains(QStringLiteral("**")), qPrintable(out));
+    QVERIFY2(out.contains(QStringLiteral("注意：先装依赖")), qPrintable(out));
+    // 用户那句仍然是纯文本气泡，不能被当成 markdown 渲染掉
+    QVERIFY2(out.contains(QStringLiteral("你：怎么编译？")), qPrintable(out));
+}
+
+// M15-5：模型经常一句话不说直接甩代码块。这种回答如果紧贴着「Flare：」写，
+// QTextHtmlParser 会把 <pre> 的首行留在标签那一段里 —— 首行既没有底色、
+// 也不在复制范围里，点复制拿到的是残缺的脚本。
+void ChatWidgetTest::replyStartingWithCodeBlockKeepsFirstLine()
+{
+    EngineBridge bridge;
+    ChatWidget w(&bridge);
+    w.resize(760, 560);
+    w.show();
+
+    w.onEngineEvent(textEvent(QStringLiteral(
+        "```bash\n#!/usr/bin/env bash\nprintf \"hi\\n\"\n```\n完事。")));
+    w.onEngineEvent(QJsonObject{{"type", "done"}});
+    QCoreApplication::processEvents();
+
+    auto *view = qobject_cast<MarkdownView *>(w.output());
+    QVERIFY(view);
+    QCOMPARE(view->codeRanges().size(), 1);
+    QCOMPARE(view->codeText(0), QStringLiteral("#!/usr/bin/env bash\nprintf \"hi\\n\""));
+    QVERIFY2(!view->copyButtonRect(0).isEmpty(), "首行是代码块时按钮同样要画出来");
+    QVERIFY2(!w.outputText().contains(QStringLiteral("Flare：#!/usr/bin/env bash")),
+             "首行不能跟「Flare：」标签挤在同一行");
 }
 
 QTEST_MAIN(ChatWidgetTest)

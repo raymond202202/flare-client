@@ -17,11 +17,21 @@ add_test(NAME engine_bridge COMMAND t_engine_bridge)
 add_executable(m1_smoke m1_smoke.cpp)
 target_link_libraries(m1_smoke PRIVATE Qt6::Core flare_client_core)
 
+# M15-3：时间戳口径（裸 UTC 串 vs RFC3339，本地时区换算、分组归属）
+add_executable(t_flaretime flaretime_test.cpp)
+target_link_libraries(t_flaretime PRIVATE Qt6::Test flare_client_core)
+add_test(NAME flaretime COMMAND t_flaretime)
+
 add_executable(t_chatwidget chatwidget_test.cpp)
 target_link_libraries(t_chatwidget PRIVATE Qt6::Test flare_client_core)
 add_test(NAME chatwidget COMMAND t_chatwidget)
 
 # M3-1 会话列表侧边栏
+# M15 消息区代码块「复制」按钮
+add_executable(t_markdownview markdownview_test.cpp)
+target_link_libraries(t_markdownview PRIVATE Qt6::Test flare_client_core)
+add_test(NAME markdownview COMMAND t_markdownview)
+
 add_executable(t_sessionlist sessionlistwidget_test.cpp)
 target_link_libraries(t_sessionlist PRIVATE Qt6::Test flare_client_core)
 add_test(NAME sessionlist COMMAND t_sessionlist)
