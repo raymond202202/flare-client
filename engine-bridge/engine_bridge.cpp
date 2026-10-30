@@ -211,9 +211,12 @@ void EngineBridge::listSessions()
     sendRequest({{QStringLiteral("type"), QStringLiteral("list_sessions")}});
 }
 
-void EngineBridge::recentSessions()
+void EngineBridge::recentSessions(int limit)
 {
-    sendRequest({{QStringLiteral("type"), QStringLiteral("recent_sessions")}});
+    QJsonObject req{{QStringLiteral("type"), QStringLiteral("recent_sessions")}};
+    if (limit > 0)
+        req.insert(QStringLiteral("limit"), limit);
+    sendRequest(req);
 }
 
 void EngineBridge::searchSessions(const QString &query, int limit)

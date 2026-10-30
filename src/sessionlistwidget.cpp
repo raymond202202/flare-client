@@ -15,6 +15,7 @@
 #include <QMessageBox>
 #include <QPoint>
 #include <QKeyEvent>
+#include <QScrollBar>
 
 // 侧边栏固定宽度（简洁轻量）
 static constexpr int kSidebarWidth = 220;
@@ -233,6 +234,20 @@ SessionListWidget::SessionListWidget(EngineBridge *bridge, QWidget *parent)
     connect(m_list, &QWidget::customContextMenuRequested,
             this, &SessionListWidget::onContextMenuRequested);
     connect(m_list, &QListWidget::itemChanged, this, &SessionListWidget::onItemChanged);
+    // 滚到底自动加载更多：引擎一次只回 m_recentLimit 条，
+    // 用户滚到接近底部就把上限抬高 40 条再拉一次（老会话不至于只能靠搜索）
+    connect(m_list->verticalScrollBar(), &QScrollBar::valueChanged, this, [this](int v) {
+        if (!m_bridge || m_archivedView || !m_hasMoreRecent || m_fetchingMore)
+            return;
+        if (!m_searchBox->text().trimmed().isEmpty())
+            return;  // 搜索结果是一个固定集合，不翻页
+        QScrollBar *sb = m_list->verticalScrollBar();
+        if (sb->maximum() <= 0 || v < sb->maximum() - 4)
+            return;  // 没滚到底
+        m_fetchingMore = true;
+        m_recentLimit += 40;
+        m_bridge->recentSessions(m_recentLimit);
+    });
     // 双击会话项 = 重命名（与右键菜单同一入口，避免直接编辑时预览行被当成标题）
     connect(m_list, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem *item) {
         // 分组标题行不是会话，双击它不应该把「当前会话」拿去改名字
@@ -320,6 +335,10 @@ void SessionListWidget::showArchived()
 void SessionListWidget::showRecent()
 {
     m_archivedView = false;
+    // 回到最近会话视图就从头开始翻页
+    m_recentLimit = 20;
+    m_hasMoreRecent = true;
+    m_fetchingMore = false;
     m_searchBox->clear();
     if (!m_lastRecent.isEmpty())
         applySessions(m_lastRecent);
@@ -345,10 +364,14 @@ void SessionListWidget::refresh()
 {
     if (!m_bridge)
         return;
-    if (m_archivedView)
+    if (m_archivedView) {
         m_bridge->archivedSessions();
-    else
-        m_bridge->recentSessions(); // M5-4: 含 preview + updatedAt
+    } else {
+        // M5-4: 含 preview + updatedAt；带上当前分页上限，
+        // 免得刷新一次就把已经翻出来的老会话又收回 20 条
+        m_fetchingMore = false;
+        m_bridge->recentSessions(m_recentLimit);
+    }
 }
 
 void SessionListWidget::onEngineEvent(const QJsonObject &obj)
@@ -359,6 +382,9 @@ void SessionListWidget::onEngineEvent(const QJsonObject &obj)
         applySessions(m_lastRecent);
     } else if (type == QLatin1String(FlareEvent::RecentSessions)) {
         m_lastRecent = obj.value(QStringLiteral("sessions")).toArray();
+        // 回来的条数不足请求上限 = 已经翻到底，别再触发加载更多
+        m_hasMoreRecent = m_lastRecent.size() >= m_recentLimit;
+        m_fetchingMore = false;
         applySessions(m_lastRecent);
     } else if (type == QLatin1String("search_sessions")) {
         // M7-2: 搜索命中 —— 仅当搜索框仍有关键词时应用（防旧响应覆盖新列表）
@@ -391,6 +417,9 @@ void SessionListWidget::onSearchChanged(const QString &text)
 void SessionListWidget::applySessions(const QJsonArray &sessions)
 {
     const QString prevId = currentSessionId();
+    // 分页加载会把列表整体重建，必须先记下滚动位置再还原，
+    // 否则用户滚到底触发加载更多时列表会弹回顶部
+    const int prevScroll = m_list->verticalScrollBar()->value();
 
     // M8: 置顶项排最前，其余保持引擎返回的时间序
     QList<QJsonObject> pinnedItems;
@@ -515,6 +544,9 @@ void SessionListWidget::applySessions(const QJsonArray &sessions)
     }
     updateEmptyHint();
     rebuildMenu();
+    // 还原滚动位置（重建列表会把滚动条打回顶部）
+    if (prevScroll > 0)
+        m_list->verticalScrollBar()->setValue(prevScroll);
 }
 
 int SessionListWidget::count() const

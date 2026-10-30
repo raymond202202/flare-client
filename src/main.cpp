@@ -3,6 +3,9 @@
 #include <QPixmap>
 #include <QFile>
 #include <QTextStream>
+#include <QListWidget>
+#include <QScrollBar>
+#include <cstdio>
 #include "sessionlistwidget.h"
 #include "mainwindow.h"
 
@@ -48,6 +51,7 @@ int main(int argc, char *argv[])
 
     QString shotPath;
     QString viewArg;
+    bool scrollBottom = false;
     for (int i = 1; i < argc; ++i) {
         const QString a = QString::fromLocal8Bit(argv[i]);
         if (a == QLatin1String("--screenshot") && i + 1 < argc)
@@ -55,6 +59,8 @@ int main(int argc, char *argv[])
         // --view archived|recent：截图前切到指定视图（回归验证回收站用）
         else if (a == QLatin1String("--view") && i + 1 < argc)
             viewArg = QString::fromLocal8Bit(argv[++i]);
+        else if (a == QLatin1String("--scroll-bottom"))
+            scrollBottom = true;  // 截图前把会话列表滚到底，回归验证分页
     }
 
     MainWindow w;
@@ -64,8 +70,21 @@ int main(int argc, char *argv[])
     if (!shotPath.isEmpty()) {
         if (viewArg.compare(QLatin1String("archived"), Qt::CaseInsensitive) == 0 && w.sessions())
             w.sessions()->showArchived();
-        // 等 2.5s 让欢迎词呼吸动画进入可见帧，再抓取
-        QTimer::singleShot(2500, &w, [&]() {
+        QListWidget *lw = w.sessions() ? w.sessions()->findChild<QListWidget *>() : nullptr;
+        if (scrollBottom && lw) {
+            // 连续滚到底四次：每次触底都会把分页上限抬高并重新拉取，
+            // 用来验证「老会话翻得到」而不是只有首屏 20 条
+            for (int k = 1; k <= 4; ++k) {
+                QTimer::singleShot(700 * k, lw, [lw]() {
+                    lw->verticalScrollBar()->setValue(lw->verticalScrollBar()->maximum());
+                });
+            }
+        }
+        // 等 2.5s 让欢迎词呼吸动画进入可见帧，再抓取（分页模式要多等几轮）
+        QTimer::singleShot(scrollBottom ? 6000 : 2500, &w, [&, lw]() {
+            // 分页验证要看得见「条数」，光看截图数不过来
+            if (lw)
+                fprintf(stderr, "LIST_ITEMS=%d\n", lw->count());
             const QPixmap pm = w.grab();
             pm.save(shotPath);
             QFile::exists(shotPath) ? app.exit(0) : app.exit(2);

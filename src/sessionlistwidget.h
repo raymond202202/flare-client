@@ -124,6 +124,11 @@ private:
     // 缓存最近一次列表数据，用于视图切换时先重放（不依赖引擎回执）
     QJsonArray m_lastRecent;
     QJsonArray m_lastArchived;
+    // 分页：引擎默认只回最近 20 条，列表滚到底就把上限抬高再拉一次。
+    // 没有这个的话，几百个老会话在列表里根本翻不到，只能靠搜索。
+    int m_recentLimit = 20;
+    bool m_hasMoreRecent = true;
+    bool m_fetchingMore = false;
     bool m_renaming = false;      // 行内重命名进行中
     bool m_suppressItemChanged = false;
     QString m_renamingId;

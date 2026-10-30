@@ -100,7 +100,9 @@ public slots:
     void cancel(const QString &sessionId = "default");
     void listSessions();
     // M5-4 拉取最近会话（含 preview 首条消息预览 + updatedAt 时间；响应 recent_sessions）
-    void recentSessions();
+    // limit>0 时请求引擎按该上限返回；引擎默认只给最近 20 条，
+    // 再多就得靠翻页把上限抬高（列表滚到底时调用）
+    void recentSessions(int limit = 0);
     // M7-2 按关键词搜索会话（响应 search_sessions；只读，不触发生成）
     void searchSessions(const QString &query, int limit = 20);
     // M7-2 拉取归档会话列表（响应 archived_sessions；只读）
