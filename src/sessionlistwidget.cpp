@@ -42,15 +42,27 @@ static bool isPlaceholderTitle(const QString &title)
         || t.startsWith(QStringLiteral("gui-"));
 }
 
-// M5-4: ISO 时间 → 简短显示（今天显示 HH:MM，否则 MM-DD）
-static QString shortTime(const QString &iso)
+// M5-4: ISO 时间 → 简短显示。M13 之后列表已有「今天/昨天/最近 7 天/更早」
+// 分组标题，条目的时间只用来补具体时刻：
+//   今天 → HH:mm（标题已说明是哪天）
+//   今年 → MM-dd
+//   跨年 → yyyy-MM-dd（只写 03-15 谁都分不清是哪一年的三月十五）
+QString SessionListWidget::shortStamp(const QString &iso, const QDateTime &now)
 {
     const QDateTime dt = QDateTime::fromString(iso, Qt::ISODateWithMs);
     if (!dt.isValid())
         return iso.left(10);
-    if (dt.date() == QDate::currentDate())
+    const QDate today = now.date();
+    if (dt.date() == today)
         return dt.toString(QStringLiteral("HH:mm"));
-    return dt.toString(QStringLiteral("MM-dd"));
+    if (dt.date().year() == today.year())
+        return dt.toString(QStringLiteral("MM-dd"));
+    return dt.toString(QStringLiteral("yyyy-MM-dd"));
+}
+
+static QString shortTime(const QString &iso)
+{
+    return SessionListWidget::shortStamp(iso, QDateTime::currentDateTime());
 }
 
 // M13: 会话按时间分组。列表长了以后一屏全是「周三/周四」的 MM-dd，

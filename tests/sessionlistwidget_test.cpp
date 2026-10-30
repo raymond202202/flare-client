@@ -46,6 +46,7 @@ private slots:
     // M13
     void sessionsGroupedByDay();
     void searchViewHasNoSectionHeaders();
+    void shortStampKeepsYearAcrossYears();
 };
 
 static bool flareAvailable()
@@ -285,6 +286,24 @@ void SessionListWidgetTest::archivedEventPopulatesList()
     QCOMPARE(w.count(), 1);
     QCOMPARE(w.sessionItem(0)->text().startsWith(QString("归档会话A")), true);
     QCOMPARE(w.sessionItem(0)->data(Qt::UserRole).toString(), QString("arch-1"));
+}
+
+// M13: 条目副行的时间戳。今天只给时刻（标题已说是哪天），今年给月日，
+// 跨年必须带年份 —— 否则「03-15」到底是今年还是去年，用户只能点进去猜。
+void SessionListWidgetTest::shortStampKeepsYearAcrossYears()
+{
+    const QDateTime now = QDateTime::fromString(QStringLiteral("2026-10-30T14:20:00.000"),
+                                                Qt::ISODateWithMs);
+    QVERIFY(now.isValid());
+    QCOMPARE(SessionListWidget::shortStamp(QStringLiteral("2026-10-30T09:05:00.000"), now),
+             QStringLiteral("09:05"));
+    QCOMPARE(SessionListWidget::shortStamp(QStringLiteral("2026-08-13T09:05:00.000"), now),
+             QStringLiteral("08-13"));
+    QCOMPARE(SessionListWidget::shortStamp(QStringLiteral("2025-03-15T09:05:00.000"), now),
+             QStringLiteral("2025-03-15"));
+    // 非法时间不崩，退化成日期前缀
+    QCOMPARE(SessionListWidget::shortStamp(QStringLiteral("2026-13-99"), now),
+             QStringLiteral("2026-13-99"));
 }
 
 QTEST_MAIN(SessionListWidgetTest)

@@ -32,6 +32,9 @@ int main(int argc, char *argv[])
                                    {"updatedAt", iso(now.addDays(-1))}});
             arr.append(QJsonObject{{"id", "demo-old"}, {"title", "上个月的引擎迁移"},
                                    {"updatedAt", iso(now.addDays(-40))}});
+            // 跨年会话：验证「更早」档里带年份显示（只写 03-15 分不清哪一年）
+            arr.append(QJsonObject{{"id", "demo-lastyear"}, {"title", "去年今天的对话"},
+                                   {"updatedAt", iso(now.addYears(-1))}});
             sessions->onEngineEvent(QJsonObject{{"type", "sessions"}, {"sessions", arr}});
         }
 

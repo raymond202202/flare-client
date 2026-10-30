@@ -10,6 +10,7 @@
 #include <QHash>
 #include <QJsonObject>
 #include <QJsonArray>
+#include <QDateTime>
 #include "engine_bridge.h"
 
 class QMenu;
@@ -54,6 +55,9 @@ public:
     int count() const;
     // 第 index 个会话项，跳过分组标题行；越界返回 nullptr
     QListWidgetItem *sessionItem(int index) const;
+    // M13: 条目副行的时间戳。纯函数（now 由调用方给，便于单测）：
+    // 今天 HH:mm / 今年 MM-dd / 跨年 yyyy-MM-dd
+    static QString shortStamp(const QString &iso, const QDateTime &now);
     // M8: 本地别名（该会话首条消息的片段）—— 引擎 title 是占位值时用它，让名字有意义
     void setLocalAlias(const QString &sessionId, const QString &text);
 
