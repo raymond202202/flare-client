@@ -221,6 +221,13 @@
 
 > 结论：850 条时单次重建最大 24ms（一帧内），整轮累加约 0.3s——**当前不构成可感卡顿**，但代价是 O(n²)（每次「加载更多」把整表重建）。这条数字留作下一轮是否改增量 append 的依据；不为想象中的性能提前改结构。
 
+**交付（飞书云文档，2026-10-31）**
+- 目录：`Flare 0.6.184 · Fedora`（`Hf31fHbNPl2AyvdliY6cbmr2ncf`），父目录 `AT1AfCJE3lCDDodwgFwcNOZrnKc`
+- 安装包：`flare-client_0.6.184.rpm`，4,285,627 字节，sha256 `d179121d…`，file token `O7kxbBV80omwhaxh4zucLBL5nih`
+- 说明文档：docx `ZpnLd0FGuoeuDsxNNyHcWtZanbc`
+- 权限：file/docx 六项全开并回读确认（`link_share_entity=anyone_readable`）；目录与 0.6.182/0.6.183 同口径（`link_share_entity=closed` 由云文档侧继承，未变）
+- 生产安装验证：`dnf install` RC=0 → `rpm -q` 0.6.184、包内引擎 `flare 0.6.184 (go)`、首屏 `APPLY ms=3 rows=20 items=22`、滚到底 `APPLY ms=24 rows=850 items=851` / `LIST_ITEMS=851 shot_reason=settled`
+
 **测试**：`ctest` 14/14（`sessionlist` 用例 16 passed / 1 skipped），新增两条用例——
 - `staleSearchResponseIsDropped`：旧关键词回执被丢弃、当前关键词回执正常应用；
 - `searchKeystrokesAreDebounced`：250ms 内连打三字只发 1 次查询，清空立即生效且不多发。
