@@ -219,12 +219,15 @@ void EngineBridge::recentSessions(int limit)
     sendRequest(req);
 }
 
-void EngineBridge::searchSessions(const QString &query, int limit)
+void EngineBridge::searchSessions(const QString &query, int limit, bool archived)
 {
     QJsonObject req{{QStringLiteral("type"), QStringLiteral("search_sessions")}};
     if (!query.trimmed().isEmpty())
         req.insert(QStringLiteral("query"), query.trimmed());
     req.insert(QStringLiteral("limit"), limit);
+    // 只在回收站视图下显式声明范围，主列表是默认口径，不往协议里塞冗余字段
+    if (archived)
+        req.insert(QStringLiteral("archived"), true);
     sendRequest(req);
 }
 

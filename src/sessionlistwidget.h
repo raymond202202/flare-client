@@ -15,6 +15,7 @@
 
 class QMenu;
 class QTimer;
+class SearchHighlightDelegate;
 
 // ============================================================
 // 会话列表侧边栏（M3-1 / M8）
@@ -101,6 +102,8 @@ private slots:
     void onSearchChanged(const QString &text);
     // 搜索防抖到期：把攒下的关键词真正发给引擎
     void flushSearch();
+    // 视图切换时把搜索状态收干净（停防抖 / 清关键词 / 清搜索框且不惊动 textChanged）
+    void resetSearchState();
     void onArchiveClicked();
     void onItemChanged(QListWidgetItem *item);
     void onContextMenuRequested(const QPoint &pos);
@@ -151,6 +154,10 @@ private:
     QString m_pendingQuery;
     QString m_inflightQuery;
     int m_searchSentCount = 0;
+    // 搜索高亮 delegate：只在有 inflight 关键词时挂着，关键词一空立刻卸掉，
+    // 让普通列表继续走 Qt 默认绘制。
+    SearchHighlightDelegate *m_searchDelegate = nullptr;
+    QString m_searchDelegateKeyword;
 
 protected:
     void resizeEvent(QResizeEvent *event) override;

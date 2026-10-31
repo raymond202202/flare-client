@@ -48,6 +48,9 @@ private slots:
     // 0.6.184：搜索回执校对 + 输入防抖
     void staleSearchResponseIsDropped();
     void searchKeystrokesAreDebounced();
+    // 0.6.185：搜索范围按视图走（回收站可搜）+ 跨视图迟到回执丢弃
+    void searchInArchiveViewAsksArchivedScope();
+    void crossViewSearchResponseIsDropped();
     void archivedEventPopulatesList();
     // M13
     void sessionsGroupedByDay();
@@ -497,6 +500,63 @@ void SessionListWidgetTest::pinnedSessionSticksToTopAndSurvivesRestart()
         for (const QString &h : heads)
             QVERIFY2(!h.contains(QStringLiteral("置顶")), "取消置顶后还留着「置顶」标题行");
     }
+}
+
+
+// 0.6.185：回收站里也要能搜。误删会话之后用户正是靠关键词把它捞回来恢复的，
+// 而引擎按集合区分搜索范围 —— 宿主必须把「我现在站在回收站」告诉引擎，
+// 否则在回收站里搜什么都只能得到空列表。
+void SessionListWidgetTest::searchInArchiveViewAsksArchivedScope()
+{
+    EngineBridge bridge;
+    SessionListWidget w(&bridge);
+    w.showArchived();   // 切到回收站视图
+
+    QSignalSpy spy(&bridge, &EngineBridge::requestSent);
+    w.searchBox()->setText(QStringLiteral("灵感"));
+    QTest::qWait(400);
+    QVERIFY(spy.count() >= 1);
+    const QJsonObject req = spy.at(spy.count() - 1).at(0).toJsonObject();
+    QCOMPARE(req.value(QStringLiteral("type")).toString(), QStringLiteral("search_sessions"));
+    QCOMPARE(req.value(QStringLiteral("query")).toString(), QStringLiteral("灵感"));
+    QCOMPARE(req.value(QStringLiteral("archived")).toBool(false), true);
+
+    // 回到主列表：同一个关键词，范围必须回到默认（不带 archived）
+    spy.clear();
+    w.showRecent();
+    w.searchBox()->setText(QStringLiteral("灵感"));
+    QTest::qWait(400);
+    QVERIFY(spy.count() >= 1);
+    const QJsonObject req2 = spy.at(spy.count() - 1).at(0).toJsonObject();
+    QCOMPARE(req2.value(QStringLiteral("type")).toString(), QStringLiteral("search_sessions"));
+    QCOMPARE(req2.value(QStringLiteral("archived")).toBool(false), false);
+}
+
+// 0.6.185：关键词相同但视图不同，回执同样是过期的 —— 光比 query 挡不住。
+// 场景：在回收站里搜过「灵感」→ 切回主列表再搜「灵感」→ 归档那份回执后到。
+void SessionListWidgetTest::crossViewSearchResponseIsDropped()
+{
+    EngineBridge bridge;
+    SessionListWidget w(&bridge);
+    w.searchBox()->setText(QStringLiteral("灵感"));
+
+    // 归档范围的回执（当前在主列表）→ 丢弃
+    QJsonArray fromArchive;
+    fromArchive.append(QJsonObject{{"id", "arch-9"}, {"title", "回收站里的命中"}});
+    w.onEngineEvent(QJsonObject{{"type", "search_sessions"},
+                                {"query", "灵感"},
+                                {"archived", true},
+                                {"sessions", fromArchive}});
+    QCOMPARE(w.count(), 0);
+
+    // 同关键词、当前视图范围的回执 → 正常上屏
+    QJsonArray fresh;
+    fresh.append(QJsonObject{{"id", "live-9"}, {"title", "主列表命中"}});
+    w.onEngineEvent(QJsonObject{{"type", "search_sessions"},
+                                {"query", "灵感"},
+                                {"sessions", fresh}});
+    QCOMPARE(w.count(), 1);
+    QCOMPARE(w.sessionItem(0)->data(Qt::UserRole).toString(), QStringLiteral("live-9"));
 }
 
 QTEST_MAIN(SessionListWidgetTest)

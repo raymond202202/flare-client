@@ -16,6 +16,8 @@
 #include <QPoint>
 #include <QKeyEvent>
 #include <QScrollBar>
+#include <QSignalBlocker>
+#include "searchhighlightdelegate.h"
 #include <QTimer>
 #include <QElapsedTimer>
 #include <cstdio>
@@ -105,6 +107,44 @@ static QString elidePx(const QString &text, const QFont &font, int maxWidthPx)
     if (maxWidthPx <= 0)
         return QString();
     return QFontMetrics(font).elidedText(oneLine, Qt::ElideRight, maxWidthPx);
+}
+
+// 搜索激活时按关键词位置截断：普通 ElideRight 从右边切，关键词多半落在
+// 窗口靠后段，一切就切没了 —— 副行反而看不出为什么命中。
+// 这里改成「让关键词一定在可见区内」，左右该省的部分用省略号表示。
+static QString elideKeepingKeyword(const QString &text, const QFont &font, int maxWidthPx,
+                                   const QString &keyword)
+{
+    const QString oneLine = text.simplified();
+    if (maxWidthPx <= 0)
+        return QString();
+    const QFontMetrics fm(font);
+    if (keyword.isEmpty() || fm.horizontalAdvance(oneLine) <= maxWidthPx)
+        return fm.elidedText(oneLine, Qt::ElideRight, maxWidthPx);
+
+    const int hit = oneLine.indexOf(keyword, 0, Qt::CaseInsensitive);
+    if (hit < 0)
+        return fm.elidedText(oneLine, Qt::ElideRight, maxWidthPx);
+
+    // 关键词本身比整行还宽（用户粘了一大段）：无解，退回普通截断
+    const QString hitText = oneLine.mid(hit, keyword.size());
+    if (fm.horizontalAdvance(hitText) >= maxWidthPx)
+        return fm.elidedText(oneLine, Qt::ElideRight, maxWidthPx);
+
+    const int room = maxWidthPx - fm.horizontalAdvance(QStringLiteral("…")) * 2
+            - fm.horizontalAdvance(hitText);
+    // 关键词前面能留多少字：给三分之一，够看清是「哪一句」
+    int headRoom = room / 3;
+    QString head = oneLine.left(hit);
+    while (!head.isEmpty() && fm.horizontalAdvance(head) > headRoom)
+        head.remove(0, 1);
+    QString tail = oneLine.mid(hit + keyword.size());
+    const int tailRoom = room - (head.isEmpty() ? 0 : fm.horizontalAdvance(head));
+    while (!tail.isEmpty() && fm.horizontalAdvance(tail) > tailRoom)
+        tail.chop(1);
+    return (head.isEmpty() ? QString() : QStringLiteral("…") + head) + hitText
+            + tail + (tail.length() < oneLine.length() - hit - keyword.size()
+                       ? QStringLiteral("…") : QString());
 }
 
 SessionListWidget::SessionListWidget(EngineBridge *bridge, QWidget *parent)
@@ -335,17 +375,30 @@ void SessionListWidget::pinCurrent()
 }
 
 // ---------------- 视图切换 ----------------
+// 视图切换的唯一搜索状态收敛点：停防抖、清关键词与在途标记、清搜索框。
+// 清搜索框必须屏蔽 textChanged —— 否则 clear() 会顺手触发一次 refresh()，
+// 叠上调用方自己的 refresh() 就是同一视图连发两次列表请求（列表重建两次）。
+void SessionListWidget::resetSearchState()
+{
+    if (m_searchDebounce)
+        m_searchDebounce->stop();
+    m_pendingQuery.clear();
+    m_inflightQuery.clear();
+    if (m_searchBox && !m_searchBox->text().isEmpty()) {
+        const QSignalBlocker blocker(m_searchBox);
+        m_searchBox->clear();
+    }
+}
+
 void SessionListWidget::showArchived()
 {
     m_archivedView = true;
-    m_searchBox->clear();
+    resetSearchState();
     // 先重放缓存，避免引擎回执到达前还显示上一个视图的会话（用户会误以为回收站里是这些）
     if (!m_lastArchived.isEmpty())
         applySessions(m_lastArchived);
     else
         applySessions(QJsonArray());
-    if (m_bridge)
-        m_bridge->archivedSessions();
     m_archiveBtn->setText(QStringLiteral("← 返回会话"));
     m_archiveBtn->setToolTip(QStringLiteral("返回最近的会话列表"));
     rebuildMenu();
@@ -359,7 +412,7 @@ void SessionListWidget::showRecent()
     m_recentLimit = 20;
     m_hasMoreRecent = true;
     m_fetchingMore = false;
-    m_searchBox->clear();
+    resetSearchState();
     if (!m_lastRecent.isEmpty())
         applySessions(m_lastRecent);
     else
@@ -424,6 +477,18 @@ void SessionListWidget::onEngineEvent(const QJsonObject &obj)
             }
             return;
         }
+        // 关键词相同也可能是跨视图的旧回执：在回收站里搜过「灵感」，切回主列表
+        // 再搜「灵感」，先发的归档查询回来时关键词一致，光比 query 挡不住。
+        // 引擎回执里带 archived 范围，跟当前视图不一致就丢。
+        const bool echoedArchived = obj.value(QStringLiteral("archived")).toBool(false);
+        if (echoedArchived != m_archivedView) {
+            if (qEnvironmentVariableIsSet("FLARE_DEBUG_LIST")) {
+                std::fprintf(stderr, "SEARCH_DROP view echoed_archived=%d current_archived=%d\n",
+                             int(echoedArchived), int(m_archivedView));
+                std::fflush(stderr);
+            }
+            return;
+        }
         applySessions(obj.value(QStringLiteral("sessions")).toArray());
     } else if (type == QLatin1String("archived_sessions")) {
         // M8：只在归档视图内填充，否则会把「最近会话」列表顶成归档内容
@@ -465,7 +530,8 @@ void SessionListWidget::flushSearch()
         return;
     m_inflightQuery = m_pendingQuery;
     ++m_searchSentCount;
-    m_bridge->searchSessions(m_inflightQuery, 30);
+    // 搜索范围跟着视图走：回收站里搜的是归档集合（引擎负责分集合，宿主不拼条件）
+    m_bridge->searchSessions(m_inflightQuery, 30, m_archivedView);
 }
 
 void SessionListWidget::applySessions(const QJsonArray &sessions)
@@ -476,15 +542,23 @@ void SessionListWidget::applySessions(const QJsonArray &sessions)
     // 分页加载会把列表整体重建，必须先记下滚动位置再还原，
     // 否则用户滚到底触发加载更多时列表会弹回顶部
     const int prevScroll = m_list->verticalScrollBar()->value();
+    // 搜索激活时（有 inflight 关键词）副行要保证关键词可见，否则用户看不出
+    // 这条为什么命中。非搜索视图为空串，截断行为与以前完全一致。
+    const QString highlightKeyword = m_inflightQuery.trimmed();
 
     // M8: 置顶项排最前，其余保持引擎返回的时间序
     QList<QJsonObject> pinnedItems;
     QList<QJsonObject> normalItems;
+    int skippedEmptyId = 0;
+    int skippedPlaceholder = 0;
+    QString firstSkippedSample;
     for (const QJsonValue &v : sessions) {
         const QJsonObject s = v.toObject();
         const QString id = s.value(QStringLiteral("id")).toString();
-        if (id.isEmpty())
+        if (id.isEmpty()) {
+            ++skippedEmptyId;
             continue;
+        }
         if (isPinned(id))
             pinnedItems.append(s);
         else
@@ -528,8 +602,15 @@ void SessionListWidget::applySessions(const QJsonArray &sessions)
 
         // 空会话不该占列表：引擎建库就写 title='新会话'，既没有真标题、
         // 也没有首条消息预览 —— 这种行点开也是空的，纯噪音。
-        if (isPlaceholderTitle(title) && preview.isEmpty())
+        if (isPlaceholderTitle(title) && preview.isEmpty()) {
+            // 引擎明明给了命中行，这里却全被跳过时，列表会「有结果却空屏」——
+            // 没有这条埋点就只能靠猜。留下首个样本，一眼看出缺的是哪个字段。
+            ++skippedPlaceholder;
+            if (firstSkippedSample.isEmpty())
+                firstSkippedSample = QStringLiteral("%1|title=%2|preview=%3")
+                        .arg(id, title, QStringLiteral("%1").arg(preview.size()));
             continue;
+        }
 
         // M8: 名字要能看出会话在干什么 —— 唯一来源是引擎：有真标题用标题，
         // 占位标题（用户还没重命名）时用引擎给的首条消息 preview，最后才是「新会话」。
@@ -537,26 +618,31 @@ void SessionListWidget::applySessions(const QJsonArray &sessions)
         // preview 打架（同一个事实两个来源）。
         const QFont itemFont = m_list->font();
         const QFontMetrics fm(itemFont);
+        const auto clip = [&](const QString &text, int maxW) {
+            return highlightKeyword.isEmpty()
+                    ? elidePx(text, itemFont, maxW)
+                    : elideKeepingKeyword(text, itemFont, maxW, highlightKeyword);
+        };
         const bool pinned = isPinned(id);
         const int pinW = pinned ? fm.horizontalAdvance(QStringLiteral("📌 ")) : 0;
         const int mainW = kItemTextWidth - pinW;
         QString mainText;
         QString secondLine;
         if (!isPlaceholderTitle(title)) {
-            mainText = elidePx(title, itemFont, mainW);
+            mainText = clip(title, mainW);
             // 引擎把占位标题回退成首条消息之后，标题与预览常常是同一句话。
             // 副行再复述一遍就是噪音，这时副行只留时间（全文仍在 tooltip 里）。
             if (!preview.isEmpty() && !sameFactText(title, preview)) {
                 const QString tail = stamp.isEmpty()
                         ? QString()
                         : QStringLiteral("  ·  ") + stamp;
-                secondLine = elidePx(preview, itemFont,
-                                     kItemTextWidth - fm.horizontalAdvance(tail)) + tail;
+                secondLine = clip(preview,
+                                  kItemTextWidth - fm.horizontalAdvance(tail)) + tail;
             } else {
                 secondLine = elidePx(stamp, itemFont, kItemTextWidth);
             }
         } else if (!preview.isEmpty()) {
-            mainText = elidePx(preview, itemFont, mainW);
+            mainText = clip(preview, mainW);
             secondLine = elidePx(stamp, itemFont, kItemTextWidth);
         } else {
             mainText = QStringLiteral("新会话");
@@ -602,6 +688,20 @@ void SessionListWidget::applySessions(const QJsonArray &sessions)
     }
     updateEmptyHint();
     rebuildMenu();
+    // 搜索高亮：命中词在副行铺琥珀底色。关键词为空就卸掉 delegate，
+    // 平常列表的绘制路径跟以前一模一样（不做无谓自绘开销）。
+    if (highlightKeyword.isEmpty()) {
+        if (m_searchDelegate) {
+            m_list->setItemDelegate(nullptr);
+            m_searchDelegate->deleteLater();
+            m_searchDelegate = nullptr;
+            m_searchDelegateKeyword.clear();
+        }
+    } else if (!m_searchDelegate || m_searchDelegateKeyword != highlightKeyword) {
+        m_searchDelegate = new SearchHighlightDelegate(highlightKeyword, this);
+        m_list->setItemDelegate(m_searchDelegate);
+        m_searchDelegateKeyword = highlightKeyword;
+    }
     // 还原滚动位置（重建列表会把滚动条打回顶部）
     if (prevScroll > 0)
         m_list->verticalScrollBar()->setValue(prevScroll);
@@ -611,9 +711,12 @@ void SessionListWidget::applySessions(const QJsonArray &sessions)
     if (qEnvironmentVariableIsSet("FLARE_DEBUG_LIST")) {
         // 用 fprintf 而不是 qWarning：--screenshot 的其它诊断（LIST_ITEMS/ITEM[i]）
         // 全都走 stderr 直写，取证时一个通道就够，不用挑 Qt 日志规则。
-        std::fprintf(stderr, "APPLY ms=%lld rows=%d items=%d scroll=%d\n",
+        std::fprintf(stderr, "APPLY ms=%lld rows=%d items=%d scroll=%d skip_noid=%d skip_placeholder=%d\n",
                      static_cast<long long>(applyTimer.elapsed()), sessions.size(),
-                     m_list->count(), m_list->verticalScrollBar()->value());
+                     m_list->count(), m_list->verticalScrollBar()->value(),
+                     skippedEmptyId, skippedPlaceholder);
+        if (!firstSkippedSample.isEmpty())
+            std::fprintf(stderr, "APPLY first_skip=%s\n", firstSkippedSample.toUtf8().constData());
         std::fflush(stderr);
     }
 

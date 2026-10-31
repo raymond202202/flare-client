@@ -47,6 +47,7 @@ int main(int argc, char *argv[])
                 << "      --system-check     打印桌面环境自检（托盘/会话类型/引擎）后退出，不弹窗口\n"
                 << "      --screenshot <路径> 启动、渲染动画后截图保存并退出\n"
                 << "      --view archived    截图前切到回收站视图\n"
+                << "      --search <关键词>  截图前把关键词打进搜索框（走真实防抖与回执校对）\n"
                 << "      --scroll-bottom    截图前把会话列表滚到底（验证分页加载）\n"
                 << "      --close-test       按一次窗口关闭，打印「是否收进托盘」后退出\n"
                 << "      --paste-test       用剪贴板图片走一次粘贴，打印挂上的附件后退出\n"
@@ -62,6 +63,7 @@ int main(int argc, char *argv[])
 
     QString shotPath;
     QString viewArg;
+    QString searchArg;
     bool scrollBottom = false;
     bool systemCheck = false;
     bool closeTest = false;
@@ -72,6 +74,8 @@ int main(int argc, char *argv[])
         if (a == QLatin1String("--screenshot") && i + 1 < argc)
             shotPath = QString::fromLocal8Bit(argv[++i]);
         // --view archived|recent：截图前切到指定视图（回归验证回收站用）
+        else if (a == QLatin1String("--search") && i + 1 < argc)
+            searchArg = QString::fromLocal8Bit(argv[++i]);
         else if (a == QLatin1String("--view") && i + 1 < argc)
             viewArg = QString::fromLocal8Bit(argv[++i]);
         else if (a == QLatin1String("--scroll-bottom"))
@@ -177,6 +181,9 @@ int main(int argc, char *argv[])
     if (!shotPath.isEmpty()) {
         if (viewArg.compare(QLatin1String("archived"), Qt::CaseInsensitive) == 0 && w.sessions())
             w.sessions()->showArchived();
+        // 搜索取证：真的走一遍输入框 → 防抖 → 引擎回执，而不是直接伪造结果列表
+        if (!searchArg.isEmpty() && w.sessions())
+            w.sessions()->searchBox()->setText(searchArg);
         QListWidget *lw = w.sessions() ? w.sessions()->findChild<QListWidget *>() : nullptr;
 
         // 取证口径：等「列表数据真的落地」再抓图，不再猜固定延时。

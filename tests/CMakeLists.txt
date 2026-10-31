@@ -32,6 +32,11 @@ add_executable(t_markdownview markdownview_test.cpp)
 target_link_libraries(t_markdownview PRIVATE Qt6::Test flare_client_core)
 add_test(NAME markdownview COMMAND t_markdownview)
 
+# 0.6.185 搜索命中高亮（像素级验证：命中词必须真的被涂色）
+add_executable(t_searchhighlight searchhighlight_test.cpp)
+target_link_libraries(t_searchhighlight PRIVATE Qt6::Test flare_client_core)
+add_test(NAME searchhighlight COMMAND t_searchhighlight)
+
 add_executable(t_sessionlist sessionlistwidget_test.cpp)
 target_link_libraries(t_sessionlist PRIVATE Qt6::Test flare_client_core)
 add_test(NAME sessionlist COMMAND t_sessionlist)

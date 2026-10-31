@@ -107,7 +107,9 @@ public slots:
     // 再多就得靠翻页把上限抬高（列表滚到底时调用）
     void recentSessions(int limit = 0);
     // M7-2 按关键词搜索会话（响应 search_sessions；只读，不触发生成）
-    void searchSessions(const QString &query, int limit = 20);
+    // archived=true 表示在当前视图是回收站：引擎按传入范围搜归档集合，
+    // 否则用户在回收站里搜关键词永远只能搜到空（引擎不跨集合捞东西）。
+    void searchSessions(const QString &query, int limit = 20, bool archived = false);
     // M7-2 拉取归档会话列表（响应 archived_sessions；只读）
     void archivedSessions();
     void createSession(const QString &sessionId, const QString &title);

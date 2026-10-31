@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(flare-client VERSION 0.6.184 LANGUAGES CXX)
+project(flare-client VERSION 0.6.185 LANGUAGES CXX)
 
 # ============================================================
 # Flare GUI 客户端 — 三平台统一 Qt 6 Widgets
@@ -37,6 +37,8 @@ add_library(flare_client_core STATIC
   src/markdownview.cpp
   src/sessionlistwidget.h
   src/sessionlistwidget.cpp
+  src/searchhighlightdelegate.h
+  src/searchhighlightdelegate.cpp
   src/memorypanel.h
   src/memorypanel.cpp
   src/skillpanel.h
