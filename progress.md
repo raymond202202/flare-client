@@ -232,6 +232,44 @@
 - `staleSearchResponseIsDropped`：旧关键词回执被丢弃、当前关键词回执正常应用；
 - `searchKeystrokesAreDebounced`：250ms 内连打三字只发 1 次查询，清空立即生效且不多发。
 
+## 0.6.185 — 搜索结果能看出「为什么命中」+ 命中词一定看得见
+
+**病象**
+1. 回收站里搜关键词，明明引擎说命中了，列表却**一条都没有**（空屏）。
+2. 主列表能搜出东西，但副行是「会话开头那段」，关键词常常不在里面——用户看不出这条为什么被搜出来。
+3. 副行长了就从右边切，而关键词常落在后段，**一切就切没了**；即使没切没，也没有任何视觉标记。
+
+**病根（引擎归引擎）**
+1. `SessionRow` 从来没有 `Preview` 字段，`search_sessions` 回执里 `preview` 恒为空串 → 客户端 `applySessions` 遇到「占位标题 + 空 preview」直接 `continue`，整条会话被丢掉。这不是宿主过滤太严，是引擎没给事实。
+2. 没有「第一条命中消息」的概念，搜索只知道自己匹配了哪条会话，不知道匹配了哪句话。
+
+**修法（引擎）**
+1. `internal/content.Snippet(raw, query, runeLimit)`：`Facts` → `OneLine` → 大小写不敏感定位关键词 → 按 rune 开窗（不切坏汉字），关键词前留 1/3 空间、越界夹紧，**只在截断处补 `…`，不加任何展示词**——换英文宿主也不串味。
+2. `SearchSessions` SQL 增子查询 `(SELECT content FROM messages m3 WHERE m3.session_id = s.id AND m3.content LIKE ? ESCAPE '\' ORDER BY m3.id LIMIT 1) AS hit_msg`，scan 后交给 `content.Snippet` 装填 `Preview`/`PreviewKinds`。
+3. `protocol.go` / `server.go` 透传 `preview` + `previewKinds`；`list_sessions` 等出口**不填**这两个字段，宿主普通列表不会平白多渲染一行。
+4. 标题命中、或关键词不在该消息里 → 退回该会话开头一段，副行不留空。
+
+**修法（客户端）**
+1. `elideKeepingKeyword()`：有关键词时按其位置开窗，两端该省处补 `…`，**命中词恒落在可见区**；关键词本身比整行还宽（粘长串）时退回 `ElideRight`。非搜索场景仍走原 `elidePx`，行为零变化。
+2. `SearchHighlightDelegate`（新文件）：命中段铺琥珀底色自绘，逐段推进（先铺底色再描字，不做整行 `drawText`，否则底色会盖住整行）。只在搜索激活时挂载、关键词一空立刻 `setItemDelegate(nullptr)` + `deleteLater()`，普通列表继续走 Qt 默认绘制。
+   - 坑：第一版 `hlBg.setAlpha(70)` 在浅色底上**几乎看不出来**（截图里精确数像素只找到 9 个偏黄点，还都在右侧聊天区）。调到 140（选中态 165）才压得出真正的琥珀块。
+3. 搜索范围按集合：宿主传 `archived` 布尔（主列表=false / 回收站=true），**宿主不拼 SQL 条件**，引擎不跨集合捞东西。
+4. 视图切换清搜索框统一走 `resetSearchState()` + `QSignalBlocker`，否则 `clear()` 触发 `textChanged` 再叠调用方 `refresh()` = 同一视图连发两次、列表重建两次。
+5. 回执校对加 `archived` 比对：跨视图/迟到的旧结果直接丢。
+
+**实测（生产安装版 0.6.185，真实库 `~/.flare/flare.db`）**
+| 项目 | 数字 |
+|---|---|
+| 包内引擎 | `/usr/lib64/flare-client/flare` → `flare 0.6.185 (go)` |
+| 首屏 | `APPLY ms=2 rows=20 items=20` |
+| 搜 `systemd` | `APPLY ms=3 rows=6 skip_noid=0 skip_placeholder=0` |
+| 副行 | `单次查询 … systemd / dock… · 10-26`（围绕关键词截取，两端 `…`） |
+| 高亮 | 截图列表区 5148 个琥珀像素；视觉复核：副行 systemd 带底色、无溢出无重叠 |
+
+**测试**：`ctest` 15/15
+- 新增 `searchhighlight`（独立可执行）：**用像素统计判定**——有关键词的行必须 >20 个偏黄像素，无关的行必须 <5 个。防止以后又把 alpha 调回「看不见」。
+- 引擎侧新增 4 条：命中上下文取自命中那条消息（不是会话首条）、标题命中回退首段、中文长文本两侧 `…`、`utf8.ValidString`。
+
 ## 构建命令（每轮必须执行）
 
 ```bash
