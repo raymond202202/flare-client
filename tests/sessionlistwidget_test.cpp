@@ -45,6 +45,9 @@ private slots:
     // M7-2
     void searchBoxExistsAndFilters();
     void searchEventPopulatesList();
+    // 0.6.184：搜索回执校对 + 输入防抖
+    void staleSearchResponseIsDropped();
+    void searchKeystrokesAreDebounced();
     void archivedEventPopulatesList();
     // M13
     void sessionsGroupedByDay();
@@ -185,6 +188,9 @@ void SessionListWidgetTest::searchBoxExistsAndFilters()
 
     QSignalSpy spy(&bridge, &EngineBridge::requestSent);
     w.searchBox()->setText(QStringLiteral("灵感"));
+    // 0.6.184：搜索改为 250ms 防抖，输入后要等防抖到期才会真发请求
+    QCOMPARE(spy.count(), 0);
+    QTest::qWait(400);
     QCOMPARE(spy.count(), 1);
     const QJsonObject req = spy.at(0).at(0).toJsonObject();
     QCOMPARE(req.value(QStringLiteral("type")).toString(), QStringLiteral("search_sessions"));
@@ -219,6 +225,47 @@ void SessionListWidgetTest::searchEventPopulatesList()
     w.onEngineEvent(QJsonObject{{"type", "search_sessions"}, {"sessions", arr2}});
     QCOMPARE(w.count(), 1); // 仍是 hit-1，未被 stale 覆盖
     QCOMPARE(w.sessionItem(0)->data(Qt::UserRole).toString(), QString("hit-1"));
+}
+
+// 0.6.184：引擎回执里带 query 回显，客户端拿它校对搜索框 —— 迟到的旧关键词
+// 回执必须丢弃，否则列表会被顶成上一个关键词的结果，而搜索框写着新词。
+void SessionListWidgetTest::staleSearchResponseIsDropped()
+{
+    EngineBridge bridge;
+    SessionListWidget w(&bridge);
+    w.searchBox()->setText(QStringLiteral("灵感记录"));
+
+    QJsonArray stale;
+    stale.append(QJsonObject{{"id", "old-1"}, {"title", "旧关键词命中"}});
+    w.onEngineEvent(QJsonObject{{"type", "search_sessions"},
+                               {"query", "灵感"},
+                               {"sessions", stale}});
+    QCOMPARE(w.count(), 0);   // 迟到响应被丢
+
+    QJsonArray fresh;
+    fresh.append(QJsonObject{{"id", "new-1"}, {"title", "新关键词命中"}});
+    w.onEngineEvent(QJsonObject{{"type", "search_sessions"},
+                               {"query", "灵感记录"},
+                               {"sessions", fresh}});
+    QCOMPARE(w.count(), 1);
+    QCOMPARE(w.sessionItem(0)->data(Qt::UserRole).toString(), QString("new-1"));
+}
+
+// 0.6.184：逐字敲不逐字查 —— 250ms 内连打三个字只发一次全表查询
+void SessionListWidgetTest::searchKeystrokesAreDebounced()
+{
+    EngineBridge bridge;
+    SessionListWidget w(&bridge);
+    w.searchBox()->setText(QStringLiteral("灵"));
+    w.searchBox()->setText(QStringLiteral("灵感"));
+    w.searchBox()->setText(QStringLiteral("灵感记"));
+    QCOMPARE(w.searchRequestsSent(), 0);   // 防抖期内一次都没发
+    QTest::qWait(400);
+    QCOMPARE(w.searchRequestsSent(), 1);   // 三次按键合并成一次查询
+
+    // 清空搜索立即回到最近会话视图，不等防抖、也不多发查询
+    w.searchBox()->clear();
+    QCOMPARE(w.searchRequestsSent(), 1);
 }
 
 // M13: 会话按「今天 / 昨天 / 最近 7 天 / 更早」分组，置顶自成一组

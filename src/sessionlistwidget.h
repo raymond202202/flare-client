@@ -14,6 +14,7 @@
 #include "engine_bridge.h"
 
 class QMenu;
+class QTimer;
 
 // ============================================================
 // 会话列表侧边栏（M3-1 / M8）
@@ -60,6 +61,8 @@ public:
     static QString shortStamp(const QString &iso, const QDateTime &now);
     // M14: 最近一次「已通知宿主」的会话 id（键盘/鼠标共用一条去重路径）
     QString navEmittedId() const { return m_navEmittedId; }
+    // 已经真正发给引擎的搜索请求条数（防抖测试：连打 N 个字只该发 1 次）
+    int searchRequestsSent() const { return m_searchSentCount; }
 
 public slots:
     void onEngineEvent(const QJsonObject &event);
@@ -96,6 +99,8 @@ private slots:
     void onDeleteClicked();
     void onItemClicked(QListWidgetItem *item);
     void onSearchChanged(const QString &text);
+    // 搜索防抖到期：把攒下的关键词真正发给引擎
+    void flushSearch();
     void onArchiveClicked();
     void onItemChanged(QListWidgetItem *item);
     void onContextMenuRequested(const QPoint &pos);
@@ -138,6 +143,14 @@ private:
     QString m_renamingOriginal;
     // M14: 已经告诉宿主的会话 id —— 光标在同一项上反复经过不该重新加载一次会话
     QString m_navEmittedId;
+    // 搜索：每敲一个字就发一次全表 LIKE 查询太浪费，攒 250ms 再发；
+    // 同时记下「最后一次真正发出去的关键词」——引擎回执带 query 回显，
+    // 拿它跟搜索框对比就能丢掉上一个关键词的迟到响应（否则慢响应会把
+    // 列表顶成旧结果，而搜索框写着新词）。
+    QTimer *m_searchDebounce = nullptr;
+    QString m_pendingQuery;
+    QString m_inflightQuery;
+    int m_searchSentCount = 0;
 
 protected:
     void resizeEvent(QResizeEvent *event) override;

@@ -16,6 +16,9 @@
 #include <QPoint>
 #include <QKeyEvent>
 #include <QScrollBar>
+#include <QTimer>
+#include <QElapsedTimer>
+#include <cstdio>
 
 // 侧边栏固定宽度（简洁轻量）
 static constexpr int kSidebarWidth = 220;
@@ -241,6 +244,11 @@ SessionListWidget::SessionListWidget(EngineBridge *bridge, QWidget *parent)
     m_searchBox->installEventFilter(this);
     // M7-2
     connect(m_searchBox, &QLineEdit::textChanged, this, &SessionListWidget::onSearchChanged);
+    // 250ms 防抖：输入停顿后才发一次搜索，避免逐字全表扫
+    m_searchDebounce = new QTimer(this);
+    m_searchDebounce->setSingleShot(true);
+    m_searchDebounce->setInterval(250);
+    connect(m_searchDebounce, &QTimer::timeout, this, &SessionListWidget::flushSearch);
     connect(m_archiveBtn, &QPushButton::clicked, this, &SessionListWidget::onArchiveClicked);
     // M8: 右键菜单 + 行内重命名
     connect(m_list, &QWidget::customContextMenuRequested,
@@ -399,9 +407,24 @@ void SessionListWidget::onEngineEvent(const QJsonObject &obj)
         m_fetchingMore = false;
         applySessions(m_lastRecent);
     } else if (type == QLatin1String("search_sessions")) {
-        // M7-2: 搜索命中 —— 仅当搜索框仍有关键词时应用（防旧响应覆盖新列表）
-        if (!m_searchBox->text().trimmed().isEmpty())
-            applySessions(obj.value(QStringLiteral("sessions")).toArray());
+        // M7-2: 搜索命中。
+        // 引擎在回执里回显 query，这里必须校对：快速改关键词时，先发的那次
+        // 查询可能后到，若直接应用就会把列表顶成上一个关键词的结果，而搜索框
+        // 写着新词 —— 用户看到的是「搜的不是我打的字」。
+        const QString echoed = obj.value(QStringLiteral("query")).toString().trimmed();
+        const QString current = m_searchBox->text().trimmed();
+        if (current.isEmpty())
+            return;
+        if (!echoed.isEmpty() && echoed != current) {
+            // 迟到响应：丢弃，等当前关键词自己的回执
+            if (qEnvironmentVariableIsSet("FLARE_DEBUG_LIST")) {
+                std::fprintf(stderr, "SEARCH_DROP stale=%s current=%s\n",
+                             echoed.toUtf8().constData(), current.toUtf8().constData());
+                std::fflush(stderr);
+            }
+            return;
+        }
+        applySessions(obj.value(QStringLiteral("sessions")).toArray());
     } else if (type == QLatin1String("archived_sessions")) {
         // M8：只在归档视图内填充，否则会把「最近会话」列表顶成归档内容
         m_lastArchived = obj.value(QStringLiteral("sessions")).toArray();
@@ -419,15 +442,36 @@ void SessionListWidget::onSearchChanged(const QString &text)
         return;
     const QString q = text.trimmed();
     if (q.isEmpty()) {
-        // 清空搜索 → 回到当前视图（最近会话 / 归档箱）
+        // 清空搜索 → 回到当前视图（最近会话 / 归档箱），立刻响应，不等防抖
+        m_pendingQuery.clear();
+        m_inflightQuery.clear();
+        if (m_searchDebounce)
+            m_searchDebounce->stop();
         refresh();
-    } else {
-        m_bridge->searchSessions(q, 30);
+        return;
     }
+    // 攒一下再发：中文输入法拼音过程、连续退格都不该每帧打一次全表 LIKE
+    m_pendingQuery = q;
+    if (!m_searchDebounce) {
+        flushSearch();
+        return;
+    }
+    m_searchDebounce->start();
+}
+
+void SessionListWidget::flushSearch()
+{
+    if (!m_bridge || m_pendingQuery.isEmpty())
+        return;
+    m_inflightQuery = m_pendingQuery;
+    ++m_searchSentCount;
+    m_bridge->searchSessions(m_inflightQuery, 30);
 }
 
 void SessionListWidget::applySessions(const QJsonArray &sessions)
 {
+    QElapsedTimer applyTimer;
+    applyTimer.start();
     const QString prevId = currentSessionId();
     // 分页加载会把列表整体重建，必须先记下滚动位置再还原，
     // 否则用户滚到底触发加载更多时列表会弹回顶部
@@ -561,6 +605,17 @@ void SessionListWidget::applySessions(const QJsonArray &sessions)
     // 还原滚动位置（重建列表会把滚动条打回顶部）
     if (prevScroll > 0)
         m_list->verticalScrollBar()->setValue(prevScroll);
+
+    // 取证：整表重建到底有多贵（850 条会话时一次重建是真实卡顿来源）。
+    // 只在 FLARE_DEBUG_LIST=1 时输出，正常使用不刷屏。
+    if (qEnvironmentVariableIsSet("FLARE_DEBUG_LIST")) {
+        // 用 fprintf 而不是 qWarning：--screenshot 的其它诊断（LIST_ITEMS/ITEM[i]）
+        // 全都走 stderr 直写，取证时一个通道就够，不用挑 Qt 日志规则。
+        std::fprintf(stderr, "APPLY ms=%lld rows=%d items=%d scroll=%d\n",
+                     static_cast<long long>(applyTimer.elapsed()), sessions.size(),
+                     m_list->count(), m_list->verticalScrollBar()->value());
+        std::fflush(stderr);
+    }
 
     emit sessionsApplied(count());
 }

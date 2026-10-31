@@ -194,6 +194,37 @@
 
 **引擎侧配套（`83d3cbc`）**：新增 `internal/content`（`Facts`/`OneLine`/`SessionTitle` 只有一份实现），`store` 三个出口在 SQL 里取 `first_user_msg` 并在出口派生标题，`cmd/flare runList` 不再自写回退。引擎只给语言中立事实（`text` + `kinds`），不往协议或库里写「[图片]」「[附件]」。
 
+## 0.6.184 — 搜索结果不再「张冠李戴」+ 逐字敲不逐字查 + 重建耗时有了数字
+
+**病象**
+1. 快速改关键词（打字、退格、删改）时，列表会偶尔顶出**上一个关键词**的结果，而搜索框里写着新词——用户看到「搜的不是我打的字」。
+2. 每敲一个字就发一次全表 `LIKE` 查询：输入法拼音过程、连续退格都算，打 5 个字就扫 5 遍全库。
+3. 列表整表重建到底有多贵，全靠感觉——850 条会话时滚到底要重建 21 次，没人知道每次多少毫秒。
+
+**病根**
+1. `search_sessions` 回执里引擎早就带 `query` 回显，客户端却只判断「搜索框非空」就照单应用 → 先发后到的慢响应合法地覆盖了新结果。
+2. 搜索没有防抖，`textChanged` 直接连到请求。
+3. 没有埋点，「卡不卡」只能靠肉眼。
+
+**修法**
+1. 回执校对：`echoed != 当前搜索框` 即判定为迟到响应并丢弃（`FLARE_DEBUG_LIST=1` 时打印 `SEARCH_DROP stale=… current=…`）；空回显仍兼容（老回执/测试数据不带 `query`）。协议不动，只是终于把引擎已经给出的信息用上。
+2. 250ms 单次防抖：清空关键词立即回到当前视图（不等防抖），非空则攒一次再发。
+3. `applySessions` 埋点：`APPLY ms=… rows=… items=… scroll=…`，只在 `FLARE_DEBUG_LIST=1` 时输出 stderr。
+   - 顺带记一条坑：这个 Qt 应用里 `qWarning` **到不了 stderr**（无控制台），取证一律改用 `fprintf(stderr, …)`，与 `LIST_ITEMS` 同一条通道。
+
+**实测（dev，真实库 850 条可见会话，`FLARE_DEBUG_LIST=1`）**
+| 项目 | 数字 |
+|---|---|
+| 首屏重建 | `APPLY ms=3 rows=20 items=22` → `LIST_ITEMS=22 shot_reason=applied` |
+| 滚到底（21 次重建） | 单次 `APPLY ms` 从 14 → 24 线性增长；合计约 0.3s |
+| 到底条数 | `LIST_ITEMS=851 shot_reason=settled` |
+
+> 结论：850 条时单次重建最大 24ms（一帧内），整轮累加约 0.3s——**当前不构成可感卡顿**，但代价是 O(n²)（每次「加载更多」把整表重建）。这条数字留作下一轮是否改增量 append 的依据；不为想象中的性能提前改结构。
+
+**测试**：`ctest` 14/14（`sessionlist` 用例 16 passed / 1 skipped），新增两条用例——
+- `staleSearchResponseIsDropped`：旧关键词回执被丢弃、当前关键词回执正常应用；
+- `searchKeystrokesAreDebounced`：250ms 内连打三字只发 1 次查询，清空立即生效且不多发。
+
 ## 构建命令（每轮必须执行）
 
 ```bash
