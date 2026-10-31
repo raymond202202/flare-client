@@ -270,6 +270,13 @@
 - 新增 `searchhighlight`（独立可执行）：**用像素统计判定**——有关键词的行必须 >20 个偏黄像素，无关的行必须 <5 个。防止以后又把 alpha 调回「看不见」。
 - 引擎侧新增 4 条：命中上下文取自命中那条消息（不是会话首条）、标题命中回退首段、中文长文本两侧 `…`、`utf8.ValidString`。
 
+**交付（飞书云文档，2026-10-31）**
+- 目录：`Flare 0.6.185 · Fedora`（`MCBQfPvFmlvhsgd7H30cDU3In3d`），父目录 `AT1AfCJE3lCDDodwgFwcNOZrnKc`
+- 安装包：`flare-client_0.6.185.rpm`，4,294,880 字节，sha256 `ea10bf0c…`，file token `OSttbAucJo0zLWxpp7Lci6kFnHd`
+- 说明文档：docx `XvrFdDSJYoq3dhx0MntcZKsDn1M`（`Flare 0.6.185 · 安装与使用说明`）
+- 权限：file/docx 六项全开并回读确认（`link_share_entity=anyone_readable`、`external_access=true`、`comment/security_entity=anyone_can_view`、`share_entity=anyone`）
+- 仓库：本机绝对路径已从工作区与**全历史**移除（`git-filter-repo --replace-text`，改写前镜像备份 `~/backups/flare-client-pre-rewrite-*.git`）；force push 后 HEAD `3ed6608`；线上 mirror 克隆复扫「口令前缀 / 本机用户名 / 内网 IP / `sk-` / `ghp_`」五类模式**零命中**
+
 ## 构建命令（每轮必须执行）
 
 ```bash
