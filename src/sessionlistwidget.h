@@ -151,6 +151,8 @@ private:
     // 拿它跟搜索框对比就能丢掉上一个关键词的迟到响应（否则慢响应会把
     // 列表顶成旧结果，而搜索框写着新词）。
     QTimer *m_searchDebounce = nullptr;
+    // 侧栏宽度联动：视图宽度变了要按新宽度更新条目 sizeHint，见 resizeEvent
+    int m_lastViewportWidth = -1;
     QString m_pendingQuery;
     QString m_inflightQuery;
     int m_searchSentCount = 0;

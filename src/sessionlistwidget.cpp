@@ -25,7 +25,16 @@
 // 侧边栏固定宽度（简洁轻量）
 static constexpr int kSidebarWidth = 220;
 // 侧栏 220px 去掉边框/内距/滚动条后留给文字的实际像素宽度
-static constexpr int kItemTextWidth = 168;
+// 会话条目的标称宽度：跟随视图实际宽度联动，不再写死。
+// 写死 168px 时侧栏 181px 也只给标题 106px，标题一律被截成「用一句话介绍…」，
+// 一屏十几条长得一模一样，这正是用户眼里的「重影」。宽度必须跟视图走。
+static constexpr int kItemMinTextWidth = 120;
+
+static int itemWidthFor(const QListWidget *list)
+{
+    const int vw = (list && list->viewport()) ? list->viewport()->width() : 180;
+    return qMax(kItemMinTextWidth, vw - 6);
+}
 
 // 会话项携带的数据角色
 static constexpr int kRoleId = Qt::UserRole;       // 协议 sessionId
@@ -565,10 +574,11 @@ void SessionListWidget::applySessions(const QJsonArray &sessions)
     }
     pinnedItems.append(normalItems);
 
-    m_list->clear();
+        m_list->clear();
+    const int itemW = itemWidthFor(m_list);
 
     // 分组标题行：不可选中、不可编辑、不带 sessionId，点它什么也不发生
-    auto appendSectionHeader = [this](const QString &label) {
+    auto appendSectionHeader = [this, itemW](const QString &label) {
         auto *h = new QListWidgetItem;
         h->setFlags(Qt::NoItemFlags);
         h->setText(QStringLiteral("  ") + label);
@@ -579,7 +589,7 @@ void SessionListWidget::applySessions(const QJsonArray &sessions)
         hf.setLetterSpacing(QFont::AbsoluteSpacing, 0.7);
         h->setFont(hf);
         h->setForeground(QColor(0xa8, 0x96, 0x80));
-        h->setSizeHint(QSize(kItemTextWidth, 30));
+        h->setSizeHint(QSize(itemW, 30));
         h->setTextAlignment(Qt::AlignLeft | Qt::AlignBottom);
         h->setData(kRoleId, QString());   // 明确「没有会话 id」
         m_suppressItemChanged = true;
@@ -601,6 +611,7 @@ void SessionListWidget::applySessions(const QJsonArray &sessions)
         // 完整时间留给 tooltip，免得 168px 的侧栏被时间吃掉一半。
         const QString stamp = updated.isEmpty() ? QString() : FlareTime::listStampCompact(updated);
         const QString fullTime = updated.isEmpty() ? QString() : FlareTime::fullStamp(updated);
+        const int msgCount = s.value(QStringLiteral("messageCount")).toInt();
 
         // 空会话不该占列表：引擎建库就写 title='新会话'，既没有真标题、
         // 也没有首条消息预览 —— 这种行点开也是空的，纯噪音。
@@ -630,12 +641,15 @@ void SessionListWidget::applySessions(const QJsonArray &sessions)
         // 单行布局：标题在左、时间在右同处一行，标题宽度必须先让出时间列，
         // 否则 168px 的侧栏会把标题挤到时间底下，看起来就是一排重影。
         const int timeW = stamp.isEmpty() ? 0 : fm.horizontalAdvance(stamp) + 10;
-        const int mainW = qMax(40, kItemTextWidth - pinW - timeW);
+        // 条目文本一律存「全文」，不再在宿主侧按像素裁：侧栏宽度是会变的
+        // （用户拖 splitter、窗口缩放），提前裁好的文本在变宽后不会自己长回来，
+        // 看起来就永远是「用一句话介绍…」。截断改由 delegate 绘制时按可用宽度做，
+        // 数据与显示彻底分开。
         QString mainText;
         if (!isPlaceholderTitle(title)) {
-            mainText = clip(title, mainW);
+            mainText = title;
         } else if (!preview.isEmpty()) {
-            mainText = clip(preview, mainW);
+            mainText = preview;
         } else {
             mainText = QStringLiteral("新会话");
         }
@@ -656,11 +670,10 @@ void SessionListWidget::applySessions(const QJsonArray &sessions)
         // 固定 52px 两行时大字号环境下两行会紧贴成一块，正是「重影」的成因。
         const int itemH = qMax(34, m_list->fontMetrics().height() + 16);
         item->setText(mainText);
-        item->setSizeHint(QSize(kItemTextWidth, itemH));
+        item->setSizeHint(QSize(itemW, itemH));
         // 侧栏只有 168px，副行塞不下「消息数」——把能区分同名会话的元信息全放 tooltip：
         // 同名 + 同分钟的重影会话，悬停就能看出是哪条（消息数差 4 倍很直观）。
         QString tip = preview.isEmpty() ? mainText : preview;
-        const int msgCount = s.value(QStringLiteral("messageCount")).toInt();
         {
             QStringList meta;
             if (!fullTime.isEmpty())
@@ -776,6 +789,23 @@ void SessionListWidget::resizeEvent(QResizeEvent *event)
     QWidget::resizeEvent(event);
     if (m_emptyHint && m_emptyHint->isVisible())
         m_emptyHint->setGeometry(m_list->rect().adjusted(10, 10, -10, -10));
+
+    // 条目宽度跟视图联动：侧栏被拖动/窗口缩放后，条目的 sizeHint 还是旧宽度，
+    // QListView 会继续按旧宽排版（右侧空一块或压字）。这里只改宽度 + 重绘，
+    // 文本本身是全文，delegate 会按新宽度重新截断 —— 不用重建数据、不闪。
+    const int vw = m_list->viewport()->width();
+    if (qAbs(vw - m_lastViewportWidth) >= 6) {
+        m_lastViewportWidth = vw;
+        const int itemW = itemWidthFor(m_list);
+        for (int i = 0; i < m_list->count(); ++i) {
+            if (auto *it = m_list->item(i)) {
+                QSize s = it->sizeHint();
+                s.setWidth(itemW);
+                it->setSizeHint(s);
+            }
+        }
+        m_list->viewport()->update();
+    }
 }
 
 // ---------------- 右键菜单 ----------------

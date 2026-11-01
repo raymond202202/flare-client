@@ -82,6 +82,13 @@ MainWindow::MainWindow(QWidget *parent)
     splitter->setStretchFactor(0, 0);
     splitter->setStretchFactor(1, 1);
     splitter->setCollapsible(0, false);
+    // 侧栏初始宽度：以前约 180px，标题只够显示六七个字，一屏十几条全被截成
+    // 「用一句话介绍…」，看着就是一片重复。给到 300px，标题能完整显示十几个字，
+    // 时间列照旧贴右端；用户拖 splitter 时条目会跟着重排（见 resizeEvent）。
+    splitter->setSizes({360, 664});
+    // QSplitter 首次布局会按子控件的 minimumSizeHint 分配，setSizes 常常被它盖掉
+    // （实测侧栏仍旧 180px）。给一个硬下限，侧栏一定不窄于 260px。
+    m_sessions->setMinimumWidth(300);
     setCentralWidget(splitter);
 
     // 侧边栏选中会话 → 聊天面板切换目标会话

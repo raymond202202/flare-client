@@ -107,6 +107,10 @@ void SearchHighlightDelegate::paint(QPainter *painter, const QStyleOptionViewIte
     const QColor mainFg = selected ? opt.palette.color(QPalette::HighlightedText)
                                    : opt.palette.color(QPalette::Text);
     QColor softFg = selected ? opt.palette.color(QPalette::HighlightedText) : FlameTheme::textSoft();
+    // 时间列原来用 textSoft（很浅的灰），在密密麻麻的同名会话里几乎看不见，
+    // 一排「14:36」糊成灰带，反而加重重影感 —— 时间列要比副行更实。
+    if (!selected)
+        softFg = mainFg;
     if (selected)
         softFg.setAlpha(200);
     // 命中底色用琥珀（火焰主题的过渡色），半透明压在选中底色上也不糊
@@ -119,7 +123,11 @@ void SearchHighlightDelegate::paint(QPainter *painter, const QStyleOptionViewIte
     const QColor hlFg = FlameTheme::dark();
 
     const QRect area = opt.rect.adjusted(8, 2, -12, -2);
-    const QFontMetrics fm(opt.font);
+    // 用 painter 自己的 fontMetrics：QFontMetrics(font) 是拿默认 DPI 新建的，
+    // painter 若带 device transform / DPI 缩放，算出来的宽度比实际绘制窄几个像素，
+    // elide 就会「以为放得下」而把字画进时间列 —— 这正是标题和时间叠在一起的原因。
+    painter->setFont(opt.font);
+    const QFontMetrics fm(painter->fontMetrics());
     const QStringList lines = text.split(QLatin1Char('\n'));
 
     painter->save();
@@ -130,9 +138,13 @@ void SearchHighlightDelegate::paint(QPainter *painter, const QStyleOptionViewIte
     const int lineGap = 2;
     const int totalH = rows > 1 ? lineH * 2 + lineGap : lineH;
     const int y0 = area.top() + (area.height() - totalH) / 2;
-    const int timeW = hasTime ? fm.horizontalAdvance(timeStr) : 0;
+    // 时间列带宽 = 文字宽 + 左侧留白 30px：右对齐时多出来的留白全落在标题
+    // 与时间之间，标题因此提前收口，两栏之间才有明显空地（实测 +10 只剩 5px）。
+    const int timeW = hasTime ? fm.horizontalAdvance(timeStr) + 20 : 0;
     // 标题可用宽度必须扣掉时间列：单行布局里两者共处一行，不让位就直接压字。
-    const int titleW = hasTime ? qMax(24, area.width() - timeW - 8) : area.width();
+    // 与时间列之间留 20px：实测 8px 时标题末字与时间首字只隔 5px，扫视像连成
+    // 一句；留到 20px 后视觉空隙约 11px，标题与时间一眼分成两栏。
+    const int titleW = hasTime ? qMax(24, area.width() - timeW - 20) : area.width();
 
     // 时间画在「最后一行」的右端：标题独占第一行才不会被时间挤成半截，
     // 而所有条目的时间都贴同一条右边缘，竖向扫一眼就是一列可比的刻度。
@@ -144,11 +156,22 @@ void SearchHighlightDelegate::paint(QPainter *painter, const QStyleOptionViewIte
         painter->drawText(timeRect, Qt::AlignRight | Qt::AlignVCenter, timeStr);
     }
 
-    drawLine(painter, QRect(area.left(), y0, titleW, lineH), opt.font, lines.at(0),
+    // 条目文本是全文，这里按「让出时间列后」的实际宽度截断：侧栏变宽 → 同一条
+    // 会话能显示更多字，用户拖宽侧栏立刻见效，不用等宿主重建列表。
+    const QString shownTitle = fm.elidedText(lines.at(0), Qt::ElideRight, titleW);
+    // 除了 elide，再夹一层硬裁切：elide 依赖字体测量，测量与实际渲染差 1-2px
+    // 就够把标题尾巴压进时间列（用户看到的「文字叠在一起」）。裁切是几何保证。
+    painter->save();
+    painter->setClipRect(QRect(area.left(), y0, titleW, lineH).adjusted(0, 0, -1, 0));
+    drawLine(painter, QRect(area.left(), y0, titleW, lineH), opt.font, shownTitle,
              m_keyword, mainFg, hlBg, hlFg);
+    painter->restore();
     if (rows > 1) {
         QRect secondRect(area.left(), y0 + lineH + lineGap, titleW, lineH);
+        painter->save();
+        painter->setClipRect(secondRect.adjusted(0, 0, -1, 0));
         drawLine(painter, secondRect, opt.font, lines.at(1), m_keyword, softFg, hlBg, hlFg);
+        painter->restore();
     }
     painter->restore();
 }
