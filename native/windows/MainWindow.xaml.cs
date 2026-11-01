@@ -492,21 +492,11 @@ namespace FlareWin
             // RenderTargetBitmap 只渲染可视树，Popup 走独立 HwndSource 拍不到，
             // 所以菜单单独渲染一张 03-menu.png，主窗口另拍 03-menu-app.png，
             // 两张在 CI 里拼成对照图（左侧栏 + 右侧菜单）。
+            // 必须排在搜索之前（3600ms，01-main 刚拍完、列表还是样本态）：
+            // 搜索回执会把列表整段重建，之后再按 id 找索引就扑空了。
             var menuId = Environment.GetEnvironmentVariable("FLARE_GUI_MENU");
             if (!string.IsNullOrEmpty(menuId))
-            {
-                Delay(8000, () =>
-                {
-                    // 前一步可能灌过搜索词，列表被过滤过 → 先清空并等防抖 + 回执，
-                    // 否则按 id 找索引会扑空（demo-2 未必含关键词）
-                    if (!string.IsNullOrEmpty(SearchBox.Text))
-                    {
-                        SearchBox.Text = "";
-                        Delay(900, () => OpenMenuShot(menuId));
-                    }
-                    else OpenMenuShot(menuId);
-                });
-            }
+                Delay(3600, () => OpenMenuShot(menuId));
 
             var smoke = Environment.GetEnvironmentVariable("FLARE_GUI_SMOKE");
             if (string.IsNullOrEmpty(smoke)) return;
@@ -611,6 +601,12 @@ namespace FlareWin
             {
                 var cm = FindContextMenu(idx);
                 if (cm == null) { LogShot("menu: " + id + " 容器上没挂 ContextMenu"); return; }
+                // 代码里 IsOpen = true 不会自动定锚 —— 只有真的右键点击时
+                // ContextMenuService 才写 PlacementTarget。不手动补上，
+                // Opened 里从 PlacementTarget 取项会拿到 null，菜单就是空的。
+                if (cm.PlacementTarget == null)
+                    cm.PlacementTarget = SessionList.ItemContainerGenerator.ContainerFromIndex(idx) as UIElement;
+                cm.Placement = System.Windows.Controls.Primitives.PlacementMode.Right;
                 cm.IsOpen = true;            // → Opened → OnSessionMenuOpened 现场造项
                 cm.UpdateLayout();
                 LogShot("menu: " + id + " items=" + cm.Items.Count + " → " + DescribeMenu(cm));
@@ -682,6 +678,16 @@ namespace FlareWin
                 target.UpdateLayout();
                 var w = (int)Math.Ceiling(target.ActualWidth);
                 var h = (int)Math.Ceiling(target.ActualHeight);
+                if (w <= 0 || h <= 0)
+                {
+                    // Popup 里的元素有时 UpdateLayout 拿不到尺寸（它不在主窗口的
+                    // 布局树里）→ 手动量一遍再排一遍
+                    target.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                    target.Arrange(new Rect(target.DesiredSize));
+                    target.UpdateLayout();
+                    w = (int)Math.Ceiling(target.ActualWidth > 0 ? target.ActualWidth : target.DesiredSize.Width);
+                    h = (int)Math.Ceiling(target.ActualHeight > 0 ? target.ActualHeight : target.DesiredSize.Height);
+                }
                 if (w <= 0 || h <= 0) { LogShot("menu shot 尺寸为 0，跳过"); return; }
                 var rtb = new RenderTargetBitmap(w, h, 96, 96, PixelFormats.Pbgra32);
                 rtb.Render(target);
