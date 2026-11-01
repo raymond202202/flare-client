@@ -15,6 +15,7 @@
 #include <QCloseEvent>
 #include "engine_bridge.h"
 #include "sessionlistwidget.h"
+#include "searchhighlightdelegate.h"
 #include "chatwidget.h"
 #include "mainwindow.h"
 
@@ -72,9 +73,13 @@ void M8FeedbackTest::sessionListUsesPreviewAsSecondLine()
     // 占位标题「新会话」不应作为名字出现，主行必须是真实内容
     QVERIFY2(!t0.startsWith(QStringLiteral("新会话")),
              qPrintable(QStringLiteral("占位标题未被替换，实际=%1").arg(t0)));
-    QVERIFY2(t0.contains(QStringLiteral("飞书文档")), qPrintable(t0));
-    // 第二行带 preview 与时间
-    QVERIFY2(t0.contains(QLatin1Char('\n')), qPrintable(t0));
+    // 单行布局：标题宽度要扣掉右侧时间列，长 preview 会被 elide 截断
+    QVERIFY2(t0.contains(QStringLiteral("飞书")), qPrintable(t0));
+    QVERIFY2(!t0.contains(QLatin1Char('\n')), qPrintable(t0));
+    // 完整 preview 与时间不再挤进第二行：preview 走 tooltip，时间走独立角色
+    QVERIFY2(w.sessionItem(0)->toolTip().contains(QStringLiteral("帮我写一个飞书文档导出脚本")),
+             qPrintable(w.sessionItem(0)->toolTip()));
+    QVERIFY(!w.sessionItem(0)->data(kFlareRoleTime).toString().isEmpty());
 
     const QString t1 = w.sessionItem(1)->text();
     QVERIFY2(t1.contains(QStringLiteral("天气")), qPrintable(t1));

@@ -338,15 +338,18 @@ void SessionListWidgetTest::sameNameSessionsGetSeparateTimeColumn()
     for (int i = 0; i < 3; ++i) {
         QListWidgetItem *it = w.sessionItem(i);
         const QString text = it->text();
-        // 两行：第一行是完整标题，第二行留给右端时间列
-        QVERIFY(text.contains(QLatin1Char('\n')));
-        QCOMPARE(text.section(QLatin1Char('\n'), 0, 0), title);
+        // 单行：整条只画一行，时间与标题同一行、贴右边缘成竖列；
+        // 第二行已经废弃（两行在大字号下会挤成一块，正是「重影」的来源）。
+        QVERIFY(!text.contains(QLatin1Char('\n')));
+        QVERIFY(text.startsWith(QStringLiteral("用一句话")));
         // 时间不进正文，走独立角色；否则会被预览挤到看不见的地方
         const QString stamp = it->data(kFlareRoleTime).toString();
         QVERIFY(!stamp.isEmpty());
         QVERIFY(!text.contains(stamp));
         stamps.insert(stamp);
-        QCOMPARE(it->sizeHint().height(), 52);
+        // 高度随字体自适应：不小于 34px，且必须容纳一整行文字
+        QVERIFY(it->sizeHint().height() >= 34);
+        QVERIFY(it->sizeHint().height() > w.fontMetrics().height());
     }
     QCOMPARE(stamps.size(), 3); // 三条同名会话的时间必须互不相同
 }

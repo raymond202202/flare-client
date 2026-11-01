@@ -118,7 +118,7 @@ void SearchHighlightDelegate::paint(QPainter *painter, const QStyleOptionViewIte
         hlBg.setAlpha(0);   // 常规列表没有命中词，别给副行铺底色
     const QColor hlFg = FlameTheme::dark();
 
-    const QRect area = opt.rect.adjusted(6, 2, -6, -2);
+    const QRect area = opt.rect.adjusted(8, 2, -12, -2);
     const QFontMetrics fm(opt.font);
     const QStringList lines = text.split(QLatin1Char('\n'));
 
@@ -131,6 +131,8 @@ void SearchHighlightDelegate::paint(QPainter *painter, const QStyleOptionViewIte
     const int totalH = rows > 1 ? lineH * 2 + lineGap : lineH;
     const int y0 = area.top() + (area.height() - totalH) / 2;
     const int timeW = hasTime ? fm.horizontalAdvance(timeStr) : 0;
+    // 标题可用宽度必须扣掉时间列：单行布局里两者共处一行，不让位就直接压字。
+    const int titleW = hasTime ? qMax(24, area.width() - timeW - 8) : area.width();
 
     // 时间画在「最后一行」的右端：标题独占第一行才不会被时间挤成半截，
     // 而所有条目的时间都贴同一条右边缘，竖向扫一眼就是一列可比的刻度。
@@ -142,12 +144,10 @@ void SearchHighlightDelegate::paint(QPainter *painter, const QStyleOptionViewIte
         painter->drawText(timeRect, Qt::AlignRight | Qt::AlignVCenter, timeStr);
     }
 
-    drawLine(painter, QRect(area.left(), y0, area.width(), lineH), opt.font, lines.at(0),
+    drawLine(painter, QRect(area.left(), y0, titleW, lineH), opt.font, lines.at(0),
              m_keyword, mainFg, hlBg, hlFg);
     if (rows > 1) {
-        QRect secondRect(area.left(), y0 + lineH + lineGap, area.width(), lineH);
-        if (hasTime)
-            secondRect.setWidth(qMax(0, area.width() - timeW - 6));
+        QRect secondRect(area.left(), y0 + lineH + lineGap, titleW, lineH);
         drawLine(painter, secondRect, opt.font, lines.at(1), m_keyword, softFg, hlBg, hlFg);
     }
     painter->restore();

@@ -627,19 +627,13 @@ void SessionListWidget::applySessions(const QJsonArray &sessions)
         };
         const bool pinned = isPinned(id);
         const int pinW = pinned ? fm.horizontalAdvance(QStringLiteral("📌 ")) : 0;
-        const int mainW = kItemTextWidth - pinW;
+        // 单行布局：标题在左、时间在右同处一行，标题宽度必须先让出时间列，
+        // 否则 168px 的侧栏会把标题挤到时间底下，看起来就是一排重影。
+        const int timeW = stamp.isEmpty() ? 0 : fm.horizontalAdvance(stamp) + 10;
+        const int mainW = qMax(40, kItemTextWidth - pinW - timeW);
         QString mainText;
-        QString secondLine;
-        // 第一行整行留给标题，时间挪到第二行右端单独成列 —— 时间挤在同一行时，
-        // 168px 的侧栏只够七八个汉字，所有会话都被截成「用一句话介…」，
-        // 名字越像越分不出，反倒更像重影。
-        const int timeW = stamp.isEmpty() ? 0 : fm.horizontalAdvance(stamp) + 8;
         if (!isPlaceholderTitle(title)) {
             mainText = clip(title, mainW);
-            // 引擎把占位标题回退成首条消息之后，标题与预览常常是同一句话。
-            // 副行再复述一遍就是噪音（全文仍在 tooltip 里），这种条目第二行只放时间。
-            if (!preview.isEmpty() && !sameFactText(title, preview))
-                secondLine = clip(preview, qMax(24, kItemTextWidth - timeW));
         } else if (!preview.isEmpty()) {
             mainText = clip(preview, mainW);
         } else {
@@ -658,16 +652,10 @@ void SessionListWidget::applySessions(const QJsonArray &sessions)
         }
 
         auto *item = new QListWidgetItem;
-        // 高度统一 52px（固定两行）：列表开了 uniformItemSizes，条目忽高忽低
-        // 会让下标和滚动位置错位。没有副行时第二行留空，右端只放时间列。
-        const int itemH = 52;
-        if (stamp.isEmpty() && secondLine.isEmpty()) {
-            item->setText(mainText); // 连时间都没有的条目交给基类单行绘制
-        } else if (secondLine.isEmpty()) {
-            item->setText(mainText + QLatin1Char('\n'));
-        } else {
-            item->setText(QStringLiteral("%1\n%2").arg(mainText, secondLine));
-        }
+        // 单行布局，条目高按当前字体度量自适应：字号再大也不会把内容挤出边界，
+        // 固定 52px 两行时大字号环境下两行会紧贴成一块，正是「重影」的成因。
+        const int itemH = qMax(34, m_list->fontMetrics().height() + 16);
+        item->setText(mainText);
         item->setSizeHint(QSize(kItemTextWidth, itemH));
         // 侧栏只有 168px，副行塞不下「消息数」——把能区分同名会话的元信息全放 tooltip：
         // 同名 + 同分钟的重影会话，悬停就能看出是哪条（消息数差 4 倍很直观）。
