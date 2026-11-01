@@ -82,51 +82,69 @@
 
     <!-- ===== 侧栏会话项 ===== -->
     <DataTemplate x:Key="SessionItem">
-      <!-- 单行：标题（按可用宽度 elide）+ 右端时间列，两格独立。
-           0.6.191 的结论——时间必须与标题同色、且各占一格；
-           写成「标题末尾拼时间」的样式，文字一变长就会把时间顶出可视区。 -->
-      <Grid ToolTip="{Binding FullStamp}">
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="*" />
-          <ColumnDefinition Width="Auto" />
-        </Grid.ColumnDefinitions>
+      <Grid>
+        <!-- 分组标题行（今天 / 昨天 / 最近 7 天 / 更早）：路标，不是会话。
+             加粗、字号 FontSmall-1.5、暖灰 #a89680、靠底对齐 —— 四组值逐字抄
+             Qt appendSectionHeader，扫读时能一眼和会话名分开。
+             与会话行互斥显示：同一份模板两套内容，省掉 TemplateSelector 和
+             两套 ItemContainerStyle 带来的选中/虚拟化分叉。 -->
+        <TextBlock x:Name="SectionLine" Text="{Binding HeaderText}" Visibility="Collapsed"
+                   FontSize="{x:Static local:Theme.FontSection}" FontWeight="Bold"
+                   Foreground="{x:Static local:Theme.TextSection}"
+                   VerticalAlignment="Bottom" Margin="2,0,0,0" />
 
-        <!-- Foreground 必须写在 Style 里，不能写成 TextBlock 的属性：
-             本地值优先级高于 Style 触发器，写成属性后选中态永远变不成白字。 -->
-        <TextBlock Grid.Column="0" Text="{Binding Display}"
-                   TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"
-                   FontSize="{x:Static local:Theme.FontList}"
-                   VerticalAlignment="Center">
-          <TextBlock.Style>
-            <Style TargetType="TextBlock">
-              <Setter Property="Foreground" Value="{x:Static local:Theme.TextMain}" />
-              <Style.Triggers>
-                <DataTrigger Value="True"
-                             Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}">
-                  <Setter Property="Foreground" Value="White" />
-                </DataTrigger>
-              </Style.Triggers>
-            </Style>
-          </TextBlock.Style>
-        </TextBlock>
+        <!-- 单行：标题（按可用宽度 elide）+ 右端时间列，两格独立。
+             0.6.191 的结论——时间必须与标题同色、且各占一格；
+             写成「标题末尾拼时间」的样式，文字一变长就会把时间顶出可视区。 -->
+        <Grid x:Name="RowLine" ToolTip="{Binding FullStamp}">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
 
-        <TextBlock Grid.Column="1" Text="{Binding Stamp}"
-                   TextWrapping="NoWrap" Margin="10,0,0,0"
-                   FontSize="{x:Static local:Theme.FontFootnote}"
-                   VerticalAlignment="Center">
-          <TextBlock.Style>
-            <Style TargetType="TextBlock">
-              <Setter Property="Foreground" Value="{x:Static local:Theme.TextMain}" />
-              <Style.Triggers>
-                <DataTrigger Value="True"
-                             Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}">
-                  <Setter Property="Foreground" Value="White" />
-                </DataTrigger>
-              </Style.Triggers>
-            </Style>
-          </TextBlock.Style>
-        </TextBlock>
+          <!-- Foreground 必须写在 Style 里，不能写成 TextBlock 的属性：
+               本地值优先级高于 Style 触发器，写成属性后选中态永远变不成白字。 -->
+          <TextBlock Grid.Column="0" Text="{Binding Display}"
+                     TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"
+                     FontSize="{x:Static local:Theme.FontList}"
+                     VerticalAlignment="Center">
+            <TextBlock.Style>
+              <Style TargetType="TextBlock">
+                <Setter Property="Foreground" Value="{x:Static local:Theme.TextMain}" />
+                <Style.Triggers>
+                  <DataTrigger Value="True"
+                               Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}">
+                    <Setter Property="Foreground" Value="White" />
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </TextBlock.Style>
+          </TextBlock>
+
+          <TextBlock Grid.Column="1" Text="{Binding Stamp}"
+                     TextWrapping="NoWrap" Margin="10,0,0,0"
+                     FontSize="{x:Static local:Theme.FontFootnote}"
+                     VerticalAlignment="Center">
+            <TextBlock.Style>
+              <Style TargetType="TextBlock">
+                <Setter Property="Foreground" Value="{x:Static local:Theme.TextMain}" />
+                <Style.Triggers>
+                  <DataTrigger Value="True"
+                               Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}">
+                    <Setter Property="Foreground" Value="White" />
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </TextBlock.Style>
+          </TextBlock>
+        </Grid>
       </Grid>
+      <DataTemplate.Triggers>
+        <DataTrigger Binding="{Binding IsHeader}" Value="True">
+          <Setter TargetName="SectionLine" Property="Visibility" Value="Visible" />
+          <Setter TargetName="RowLine" Property="Visibility" Value="Collapsed" />
+        </DataTrigger>
+      </DataTemplate.Triggers>
     </DataTemplate>
 
   </Window.Resources>

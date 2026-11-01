@@ -87,11 +87,41 @@ namespace FlareWin
         {
             get
             {
+                // 分组标题行不是会话：它没有 id、没有时间，进不了任何会话逻辑，
+                // 只有一行用来扫读的路标文字。这里先短路，避免它被当成「新会话」。
+                if (IsHeader) return HeaderText ?? "";
                 var t = string.IsNullOrWhiteSpace(Title) ? Preview : Title;
                 if (string.IsNullOrWhiteSpace(t)) t = "新会话";
                 return t.Replace("\r", " ").Replace("\n", " ").Trim();
             }
         }
+
+        /// <summary>
+        /// 时间分组标题行（今天 / 昨天 / 最近 7 天 / 更早 / 📌 置顶）。
+        /// 与会话项同处一个集合、同一个 ListBox —— 与 Qt 侧 appendSectionHeader 同构：
+        /// 那边也是往同一个 QListWidget 里塞一条 NoItemFlags 的标题项。
+        /// 单独建分组控件会和虚拟化、滚动、选中互斥打架，还得处理两套滚动同步。
+        /// </summary>
+        public bool IsHeader { get; set; }
+
+        /// <summary>分组标题文字，仅 IsHeader 为真时有效。</summary>
+        public string HeaderText { get; set; }
+
+        /// <summary>本地时间的更新时间，分组用。引擎给 UTC，不转本地会把夜里 8 点后的会话归到第二天。</summary>
+        public DateTime? UpdatedLocal { get { return ParseUpdated(); } }
+
+        /// <summary>该行的时间分组口径，逐字对齐 Qt FlareTime::section。</summary>
+        public static string SectionOf(DateTime? dt)
+        {
+            if (dt == null) return "更早";
+            var today = DateTime.Now.Date;
+            var d = dt.Value.Date;
+            if (d == today) return "今天";
+            if (d == today.AddDays(-1)) return "昨天";
+            if (d >= today.AddDays(-6)) return "最近 7 天";
+            return "更早";
+        }
+
 
         /// <summary>
         /// 右端时间列：今天只留 HH:mm，今年 MM-dd HH:mm，跨年压成两位年 yy-MM-dd HH:mm。

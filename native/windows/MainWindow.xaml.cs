@@ -106,6 +106,8 @@ namespace FlareWin
             ChatTitle.Text = "新对话";
             foreach (var s in _engine.Sessions)
             {
+                // 标题行 Id 是空串，新会话时 SessionID 也可能为空，不排掉会给标题行配上名字
+                if (s.IsHeader) continue;
                 if (s.Id == _engine.SessionID)
                 {
                     ChatTitle.Text = s.Display;
@@ -201,6 +203,8 @@ namespace FlareWin
         {
             if (SessionList.SelectedItem is SessionInfo s)
             {
+                // 分组标题行没有 id，掉进 SwitchSession 会拿空串去查引擎
+                if (s.IsHeader) return;
                 ChatTitle.Text = s.Display;
                 // 截图样本不是真会话，去引擎 load_session 只会拿回一条 error 糊在画面上
                 if (s.Id.StartsWith("demo-")) return;
@@ -273,8 +277,14 @@ namespace FlareWin
             {
                 Delay(3000, () =>
                 {
-                    if (SessionList.Items.Count > 0 && SessionList.SelectedIndex < 0)
-                        SessionList.SelectedIndex = 0;
+                    if (SessionList.SelectedIndex >= 0) return;
+                    // 第 0 项现在是分组标题（IsEnabled=False 不可选），直接写 SelectedIndex=0
+                    // 会被 WPF 静默忽略 —— 又变成拍不到选中态，等于这轮取证白做。
+                    for (int i = 0; i < SessionList.Items.Count; i++)
+                    {
+                        var it = SessionList.Items[i] as SessionInfo;
+                        if (it != null && !it.IsHeader) { SessionList.SelectedIndex = i; break; }
+                    }
                 });
             }
 

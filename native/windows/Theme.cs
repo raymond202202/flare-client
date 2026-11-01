@@ -57,12 +57,18 @@ namespace FlareWin
         public static readonly Color TextMainC = C("#4a2e0d");
         public static readonly Color TextSoftC = C("#8a6a3b");
         public static readonly Color TextMutedC = C("#9a8f80");
+
+        /// <summary>分组标题（今天/昨天/最近 7 天/更早）的前景色，逐字抄 Qt
+        /// appendSectionHeader 的 QColor(0xa8,0x96,0x80) —— 比正文灰更暖，
+        /// 才不会在浅米色侧栏里显得像被禁用的文字。</summary>
+        public static readonly Color TextSectionC = C("#a89680");
         public static readonly Color TextFaintC = C("#b9ab99");
         public static readonly Color TextGrayC = C("#4b5563");
 
         public static readonly SolidColorBrush TextMain = B(TextMainC);
         public static readonly SolidColorBrush TextSoft = B(TextSoftC);
         public static readonly SolidColorBrush TextMuted = B(TextMutedC);
+        public static readonly SolidColorBrush TextSection = B(TextSectionC);
         public static readonly SolidColorBrush TextFaint = B(TextFaintC);
         public static readonly SolidColorBrush TextGray = B(TextGrayC);
 
@@ -112,6 +118,8 @@ namespace FlareWin
         /// <summary>§2 字号阶梯（绝对 px，跟随系统 DPI）。</summary>
         public const double FontFootnote = 11;
         public const double FontSmall = 12;
+        /// <summary>分组标题字号 = FontSmall - 1.5，对齐 Qt 的 qMax(7.5, pointSize-1.5)。</summary>
+        public const double FontSection = 10.5;
         public const double FontList = 13;
         public const double FontBody = 14;
         public const double FontPanelTitle = 15;

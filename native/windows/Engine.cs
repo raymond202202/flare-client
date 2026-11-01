@@ -646,6 +646,49 @@ namespace FlareWin
             // 永远进不了离屏截图 —— 改坏了也拍不出来。FLARE_GUI_DEMO 显式开启才灌样本。
             if (target.Count == 0 && !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("FLARE_GUI_DEMO")))
                 InjectDemoSessions(target);
+
+            // 分组放在最后一步：样本注入之后、写进集合之前只此一次机会，
+            // 早于注入就会把分组标题和会话项拆成两份对不齐的数据。
+            ApplyDaySections(target);
+        }
+
+        /// <summary>
+        /// 按时间插分组标题行（今天 / 昨天 / 最近 7 天 / 更早）—— 与 Qt
+        /// sessionlistwidget.cpp 的 appendSectionHeader 同构：那边也是往同一个
+        /// QListWidget 里塞一条 NoItemFlags 的标题项，不是另建一套分组控件。
+        /// 分组控件会和虚拟化、滚动、单选互斥三处同时打架，还得再维护两条滚动同步。
+        /// </summary>
+        private static void ApplyDaySections(ObservableCollection<SessionInfo> target)
+        {
+            if (target.Count == 0) return;
+            var rows = new List<SessionInfo>();
+            foreach (var s in target)
+                if (!s.IsHeader) rows.Add(s);
+            if (rows.Count == 0) return;
+
+            // 引擎返回理论上已按 updatedAt 倒序；显式再排一次，否则同一分组会被
+            // 中间插进来的一条旧会话截断，列表里出现两个「更早」。
+            rows.Sort(delegate (SessionInfo a, SessionInfo b)
+            {
+                var x = a.UpdatedLocal; var y = b.UpdatedLocal;
+                if (x == null && y == null) return 0;
+                if (x == null) return 1;
+                if (y == null) return -1;
+                return y.Value.CompareTo(x.Value);
+            });
+
+            target.Clear();
+            string cur = null;
+            foreach (var s in rows)
+            {
+                var sec = SessionInfo.SectionOf(s.UpdatedLocal);
+                if (sec != cur)
+                {
+                    target.Add(new SessionInfo { Id = "", IsHeader = true, HeaderText = sec, Title = sec });
+                    cur = sec;
+                }
+                target.Add(s);
+            }
         }
 
         /// <summary>
@@ -666,8 +709,10 @@ namespace FlareWin
             // 今天 → HH:mm；今年 → MM-dd HH:mm；跨年 → yy-MM-dd HH:mm
             add("demo-1", "帮我把这段 Go 的并发逻辑改成带超时控制的写法", now.AddMinutes(-8));
             add("demo-2", "灵感稍纵即逝——怎么设计一个不打断思路的速记入口", now.AddHours(-3));
-            add("demo-3", "Windows 原生版和 Qt 版的行为差异清单", now.AddDays(-9));
-            add("demo-4", "把每次对话的 token 消耗按周做成一张折线图", now.AddDays(-46));
+            // 昨天 / 最近 7 天这两组必须各有样本，否则分组标题压根不进画面，
+            // 「今天 / 昨天 / 最近 7 天 / 更早」四段只验得到两段。
+            add("demo-3", "Windows 原生版和 Qt 版的行为差异清单", now.AddDays(-1).AddHours(-2));
+            add("demo-4", "把每次对话的 token 消耗按周做成一张折线图", now.AddDays(-3));
             add("demo-5", "复盘：为什么重影问题在离屏截图里看不出来", now.AddDays(-190));
             add("demo-6", "短标题", now.AddDays(-400));
         }
