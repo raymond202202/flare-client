@@ -348,7 +348,10 @@ namespace FlareWin
 
             cm.Items.Clear();
 
+            // 逐项对齐 Qt 0.6.191 sessionlistwidget.cpp::rebuildMenu()：
+            // 文案、顺序、分隔位、以及「归档箱里再删 = 彻底删除」这条都照搬。
             var miPin = new MenuItem { Header = pinned ? "📌 取消置顶" : "📌 置顶会话" };
+            miPin.IsEnabled = !isDemo;
             miPin.Click += (o, ev) => _engine.TogglePin(s.Id);
             cm.Items.Add(miPin);
 
@@ -359,47 +362,59 @@ namespace FlareWin
 
             cm.Items.Add(new Separator());
 
-            // 归档箱里的项已经在箱里，「归档」没意义；换成正反两个真动作。
-            // 归档视图下主列表本身就是回收站，末项也就不该再指回回收站。
             if (_engine.ShowingArchived)
             {
-                var miBack = new MenuItem { Header = "♻️ 恢复会话" };
-                miBack.IsEnabled = !isDemo;
-                miBack.Click += (o, ev) => _engine.RestoreSession(s.Id);
-                cm.Items.Add(miBack);
+                var miRestore = new MenuItem { Header = "↩️ 恢复到最近会话" };
+                miRestore.IsEnabled = !isDemo;
+                miRestore.Click += (o, ev) => _engine.RestoreSession(s.Id);
+                cm.Items.Add(miRestore);
 
-                var miPurge = new MenuItem { Header = "🔥 彻底删除" };
+                var miPurge = new MenuItem { Header = "❌ 彻底删除（不可恢复）" };
                 miPurge.IsEnabled = !isDemo;
                 miPurge.Click += (o, ev) =>
                 {
                     if (Dialog.Confirm(this, "彻底删除会话",
-                            "「" + s.Display + "」将被永久删除，无法恢复。", "删除", true))
+                            "彻底删除后无法恢复，确定要删除这个会话吗？", "删除", true))
                         _engine.PurgeSession(s.Id);
                 };
                 cm.Items.Add(miPurge);
-
-                cm.Items.Add(new Separator());
-                var miBackList = new MenuItem { Header = "↩️ 返回最近会话" };
-                miBackList.Click += (o, ev) => _engine.LoadSessions();
-                cm.Items.Add(miBackList);
-                return;
             }
-
-            var miArchive = new MenuItem { Header = "📦 归档到归档箱" };
-            miArchive.IsEnabled = !isDemo;
-            miArchive.Click += (o, ev) => _engine.EndSession(s.Id);
-            cm.Items.Add(miArchive);
+            else
+            {
+                var miArchive = new MenuItem { Header = "📦 归档到归档箱" };
+                miArchive.IsEnabled = !isDemo;
+                miArchive.Click += (o, ev) => _engine.EndSession(s.Id);
+                cm.Items.Add(miArchive);
+            }
 
             var miClear = new MenuItem { Header = "🧹 清空会话消息" };
             miClear.IsEnabled = !isDemo;
             miClear.Click += (o, ev) => ClearSession(s);
             cm.Items.Add(miClear);
 
+            if (!_engine.ShowingArchived)
+            {
+                // Qt 里 archiveCurrent 与 deleteCurrent 落到同一条 end_session（都是软删），
+                // 保留两项是因为「归档」和「丢进回收站」在中文里不是一回事。
+                // EndSession 内部先 Unpin，和 Qt deleteCurrent 的 removeAll 一致。
+                var miTrash = new MenuItem { Header = "🗑️ 移入回收站" };
+                miTrash.IsEnabled = !isDemo;
+                miTrash.Click += (o, ev) => _engine.EndSession(s.Id);
+                cm.Items.Add(miTrash);
+            }
+
             cm.Items.Add(new Separator());
 
-            var miBin = new MenuItem { Header = "🗑️ 打开回收站" };
-            miBin.Click += (o, ev) => OpenArchivePanel();
-            cm.Items.Add(miBin);
+            var miToggle = new MenuItem
+            {
+                Header = _engine.ShowingArchived ? "📂 返回最近会话" : "🗑️ 打开回收站"
+            };
+            miToggle.Click += (o, ev) =>
+            {
+                if (_engine.ShowingArchived) _engine.LoadSessions();
+                else OpenArchivePanel();
+            };
+            cm.Items.Add(miToggle);
         }
 
         private void RenameSession(SessionInfo s)

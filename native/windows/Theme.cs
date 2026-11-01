@@ -128,5 +128,13 @@ namespace FlareWin
 
         public const string FontUi = "Segoe UI";
         public const string FontMono = "Consolas";
+
+        // WPF 的 Segoe UI 不含 emoji 字形，系统 font linking 也不会自动链到
+        // Segoe UI Emoji —— 结果就是 📌✏️📦 这些字符只占宽度、不画字形，
+        // 菜单上看着像「缩进多了一块，图标凭空没了」。凡是含 emoji 的文本
+        // 都得显式走这条回退链：先问 Segoe UI Emoji 要字形，中文再回退到雅黑。
+        // 注意 WPF 只认 COLR 之外的轮廓，emoji 出来是单色（跟随 Foreground），
+        // 不会像 Qt 在 Linux 上那样是彩色 —— 这是平台限制，不是样式没写对。
+        public const string FontEmoji = "Segoe UI Emoji, Segoe UI, Microsoft YaHei UI";
     }
 }
