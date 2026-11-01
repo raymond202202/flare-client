@@ -108,17 +108,6 @@
     <Setter Property="Margin" Value="0,1" />
     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
     <Setter Property="Cursor" Value="Hand" />
-    <Style.Triggers>
-      <!-- 分组标题行不是会话：不可点、不可聚焦、不抢方向键、不弹悬停色。
-           走 IsEnabled=False 而不是在回调里判空 —— 直接在输入层拦掉，
-           键盘上下键和 Shift 连选都会自己跳过它，不用在每处回调补守卫。 -->
-      <DataTrigger Binding="{Binding IsHeader}" Value="True">
-        <Setter Property="IsEnabled" Value="False" />
-        <Setter Property="Focusable" Value="False" />
-        <Setter Property="Cursor" Value="Arrow" />
-        <Setter Property="Padding" Value="8,9,6,3" />
-      </DataTrigger>
-    </Style.Triggers>
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="ListBoxItem">
@@ -147,6 +136,17 @@
         </ControlTemplate>
       </Setter.Value>
     </Setter>
+    <Style.Triggers>
+      <!-- 分组标题行不是会话：不可点、不可聚焦、不抢方向键、不弹悬停色。
+           走 IsEnabled=False 而不是在回调里判空 —— 直接在输入层拦掉，
+           键盘上下键和 Shift 连选都会自己跳过它，不用在每处回调补守卫。 -->
+      <DataTrigger Binding="{Binding IsHeader}" Value="True">
+        <Setter Property="IsEnabled" Value="False" />
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="Cursor" Value="Arrow" />
+        <Setter Property="Padding" Value="8,9,6,3" />
+      </DataTrigger>
+    </Style.Triggers>
   </Style>
 
   <!-- ========== 多行输入框（圆角，无默认边框） ========== -->
