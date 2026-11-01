@@ -640,6 +640,36 @@ namespace FlareWin
                     Count = it["count"] != null ? (int?)it["count"] ?? 0 : 0
                 });
             }
+
+            // 截图取证开关：CI 的库里没有历史会话，recent_sessions 恒定回空数组，
+            // 于是「单行条目 + 右端时间列 + 超长标题按宽度省略」这套最关键的样式
+            // 永远进不了离屏截图 —— 改坏了也拍不出来。FLARE_GUI_DEMO 显式开启才灌样本。
+            if (target.Count == 0 && !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("FLARE_GUI_DEMO")))
+                InjectDemoSessions(target);
+        }
+
+        /// <summary>
+        /// 仅用于离屏截图取证：造几条样本会话，时间跨度覆盖三种时间口径，
+        /// 标题长度拉到一定会触发 TextTrimming 的程度。
+        /// </summary>
+        private static void InjectDemoSessions(ObservableCollection<SessionInfo> target)
+        {
+            var now = DateTime.UtcNow;
+            Action<string, string, DateTime> add = (id, title, when) => target.Add(new SessionInfo
+            {
+                Id = id,
+                Title = title,
+                Preview = "",
+                UpdatedAt = when.ToString("yyyy-MM-ddTHH:mm:ss") + "Z",
+                Count = 1
+            });
+            // 今天 → HH:mm；今年 → MM-dd HH:mm；跨年 → yy-MM-dd HH:mm
+            add("demo-1", "帮我把这段 Go 的并发逻辑改成带超时控制的写法", now.AddMinutes(-8));
+            add("demo-2", "灵感稍纵即逝——怎么设计一个不打断思路的速记入口", now.AddHours(-3));
+            add("demo-3", "Windows 原生版和 Qt 版的行为差异清单", now.AddDays(-9));
+            add("demo-4", "把每次对话的 token 消耗按周做成一张折线图", now.AddDays(-46));
+            add("demo-5", "复盘：为什么重影问题在离屏截图里看不出来", now.AddDays(-190));
+            add("demo-6", "短标题", now.AddDays(-400));
         }
 
         private void FillMemories(JObject obj)
