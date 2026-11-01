@@ -201,8 +201,10 @@ namespace FlareWin
         {
             if (SessionList.SelectedItem is SessionInfo s)
             {
-                _engine.SwitchSession(s.Id);
                 ChatTitle.Text = s.Display;
+                // 截图样本不是真会话，去引擎 load_session 只会拿回一条 error 糊在画面上
+                if (s.Id.StartsWith("demo-")) return;
+                _engine.SwitchSession(s.Id);
             }
         }
 
@@ -262,6 +264,18 @@ namespace FlareWin
             if (string.IsNullOrEmpty(shotDir))
             {
                 if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("FLARE_GUI_SMOKE"))) return;
+            }
+
+            // 取证时先选中第一条：选中态是最容易错的一处
+            // （Foreground 写成元素属性会被本地值优先级压过 DataTrigger，选中后字不变白），
+            // 不选中就永远拍不到，等于没验。
+            if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("FLARE_GUI_DEMO")))
+            {
+                Delay(3000, () =>
+                {
+                    if (SessionList.Items.Count > 0 && SessionList.SelectedIndex < 0)
+                        SessionList.SelectedIndex = 0;
+                });
             }
 
             // 启动 3.5s 后：01-main
