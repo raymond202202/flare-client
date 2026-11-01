@@ -231,7 +231,7 @@
               <TextBlock x:Name="txt" Grid.Column="0" Text="{TemplateBinding Header}"
                          Foreground="{TemplateBinding Foreground}"
                          FontSize="{TemplateBinding FontSize}"
-                         FontFamily="{x:Static local:Theme.FontEmoji}"
+                         FontFamily="{x:Static local:Theme.FontEmojiFamily}"
                          VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
               <TextBlock Grid.Column="1" Text="{TemplateBinding InputGestureText}"
                          Foreground="{x:Static local:Theme.TextFaint}"

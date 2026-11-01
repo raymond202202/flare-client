@@ -136,5 +136,11 @@ namespace FlareWin
         // 注意 WPF 只认 COLR 之外的轮廓，emoji 出来是单色（跟随 Foreground），
         // 不会像 Qt 在 Linux 上那样是彩色 —— 这是平台限制，不是样式没写对。
         public const string FontEmoji = "Segoe UI Emoji, Segoe UI, Microsoft YaHei UI";
+
+        // 同一个回退链的强类型版本。XAML 里给 TextBlock 直接属性赋值必须用它：
+        // x:Static 返回 string 时不会走 TypeConverter，会在 GetTypeface 里抛
+        // InvalidCastException（'System.String' → 'FontFamily'），整个模板测量炸掉。
+        // Setter.Value 那条路能容忍 string，直接属性赋值不行 —— 别混用。
+        public static readonly FontFamily FontEmojiFamily = new FontFamily(FontEmoji);
     }
 }
