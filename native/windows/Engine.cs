@@ -208,6 +208,16 @@ namespace FlareWin
             ApplyDaySections(ShowingArchived ? ArchivedSessions : Sessions);
         }
 
+        /// <summary>取消置顶（已是未置顶状态时什么都不做）。软删/彻底删前要先清偏好，
+        /// 否则同一 id 以后被复用会莫名带着 📌 复活 —— Qt deleteCurrent/purgeCurrent 都先 removeAll。</summary>
+        public void Unpin(string id)
+        {
+            if (string.IsNullOrEmpty(id)) return;
+            if (!_pinned.Remove(id)) return;
+            SavePinned();
+            ApplyDaySections(ShowingArchived ? ArchivedSessions : Sessions);
+        }
+
         /// <summary>发出搜索。limit=30 与 Qt 一致（sessionlistwidget.cpp:542）。</summary>
         public void SearchSessions(string query, int limit = 30)
         {
@@ -572,6 +582,49 @@ namespace FlareWin
             Send(o);
         }
 
+        // MARK: - 会话右键动作（口径对齐 Qt 0.6.191 rebuildMenu → 各 *Current 槽）
+        // 一律走 compat 层命令：回执形状是 {type:"ok", sessionId, archived/restored/deleted/cleared}，
+        // 和 server.go 里的 archive_session/clear_messages（session_updated/messages_cleared）不同名。
+        // 宿主只认一种回执，才不会出现「动作成功但列表不刷新」。
+
+        /// <summary>归档到归档箱（软删，可在回收站恢复）。</summary>
+        public void EndSession(string id)
+        {
+            if (string.IsNullOrEmpty(id)) return;
+            Unpin(id);
+            var o = New("end_session");
+            o["sessionId"] = id;
+            Send(o);
+        }
+
+        /// <summary>从归档箱恢复到最近会话。</summary>
+        public void RestoreSession(string id)
+        {
+            if (string.IsNullOrEmpty(id)) return;
+            var o = New("restore_session");
+            o["sessionId"] = id;
+            Send(o);
+        }
+
+        /// <summary>清空该会话的消息，会话本身保留。</summary>
+        public void ClearSession(string id)
+        {
+            if (string.IsNullOrEmpty(id)) return;
+            var o = New("clear_session");
+            o["sessionId"] = id;
+            Send(o);
+        }
+
+        /// <summary>彻底删除（不可恢复）。调用方负责先弹确认框。</summary>
+        public void PurgeSession(string id)
+        {
+            if (string.IsNullOrEmpty(id)) return;
+            Unpin(id);
+            var o = New("delete_session");
+            o["sessionId"] = id;
+            Send(o);
+        }
+
         // MARK: - 接收
 
         private void Handle(string line)
@@ -679,6 +732,44 @@ namespace FlareWin
                     break;
                 }
 
+                case "ok":
+                {
+                    // 动作类回执（重命名/归档/恢复/清空/彻底删除）。
+                    // compat 层统一回 {type:"ok", sessionId, archived|restored|deleted|cleared}，
+                    // 所以这里按出现的键判断动作，再决定要不要动主区、用哪句提示。
+                    var sid = (string)obj["sessionId"] ?? "";
+                    var isDeleted = obj["deleted"] != null && (bool)obj["deleted"];
+                    var isArchived = obj["archived"] != null && (bool)obj["archived"];
+                    var isRestored = obj["restored"] != null && (bool)obj["restored"];
+                    var isCleared = obj["cleared"] != null;
+                    var onCurrent = sid.Length > 0 && sid == SessionID;
+
+                    if (isDeleted)
+                    {
+                        StatusText = "已彻底删除";
+                        if (onCurrent) { SessionID = "default"; Blocks.Clear(); }
+                    }
+                    else if (isArchived)
+                    {
+                        StatusText = "已移入回收站，可在「🗑️ 回收站」里恢复";
+                        // 归档掉的正好是打开着的会话：留着主区继续显示一个「已进回收站」的
+                        // 对话会让人以为还能接着聊，直接让空态接管
+                        if (onCurrent) { SessionID = "default"; Blocks.Clear(); }
+                    }
+                    else if (isRestored) StatusText = "已恢复到最近会话";
+                    else if (isCleared)
+                    {
+                        StatusText = "已清空该会话的消息";
+                        if (onCurrent) Blocks.Clear();
+                    }
+                    else StatusText = "Flare 引擎已连接";
+
+                    Dbg("ok: " + (string)obj["sessionId"] + " " + obj.ToString(Newtonsoft.Json.Formatting.None));
+                    // 视图不变，重新拉一遍当前集合（与 Qt 「ok 回执 → refresh()」同一手）
+                    RefreshCurrentView();
+                    break;
+                }
+
                 case "sessions":
                 case "recent_sessions":
                     // 先置视图再填：ApplyDaySections 靠 ShowingArchived 判「要不要插分组标题」，
@@ -778,7 +869,6 @@ namespace FlareWin
                     break;
 
                 case "pong":
-                case "ok":
                 case "confirm_status":
                     break;
 

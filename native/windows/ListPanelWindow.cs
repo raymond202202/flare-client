@@ -91,14 +91,28 @@ namespace FlareWin
 
             Loaded += (s, e) =>
             {
-                _engine = (Owner as Window)?.DataContext as Engine;
+                // 面板自己也从 Owner 的 DataContext 兜一层，但归档面板是主窗口
+                // 直接 new 出来的，显式给一份 HostEngine 更稳（Owner.DataContext 可能是别的）
+                if (_engine == null) _engine = (Owner as Window)?.DataContext as Engine;
                 Refresh();
             };
         }
 
+        /// <summary>显式传入引擎（归档面板在 ShowDialog 前设置，比靠 Owner.DataContext 稳）。</summary>
+        public Engine HostEngine
+        {
+            get { return _engine; }
+            set { _engine = value; }
+        }
+
         public void BindSessions(ObservableCollection<SessionInfo> src)
         {
-            Loaded += (s, e) => FillSessions(src);
+            Loaded += (s, e) =>
+            {
+                FillSessions(src);
+                // 归档集合由引擎回执重建（不是原地改），恢复/彻底删除后必须跟着重绘
+                src.CollectionChanged += (s2, e2) => FillSessions(src);
+            };
         }
 
         public void BindMemories(ObservableCollection<MemoryItem> src, Engine engine)
@@ -158,8 +172,48 @@ namespace FlareWin
                 var st = new StackPanel();
                 st.Children.Add(tb);
                 st.Children.Add(sub);
-                card.Child = st;
+
+                // 归档箱里两个动作：恢复（回最近会话）/ 彻底删除（落库不可恢复）。
+                // 都落在引擎既有命令上（restore_session / delete_session），面板只做确认。
+                var acts = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    VerticalAlignment = VerticalAlignment.Top,
+                    Margin = new Thickness(10, -2, 0, 0)
+                };
                 var id = s.Id;
+                var restore = new Button
+                {
+                    Content = "恢复",
+                    Style = (Style)Application.Current.Resources["GhostBtn"],
+                    Padding = new Thickness(11, 4, 11, 4)
+                };
+                restore.Click += (o, ev) => _engine?.RestoreSession(id);
+                var purge = new Button
+                {
+                    Content = "彻底删除",
+                    Style = (Style)Application.Current.Resources["StopBtn"],
+                    Padding = new Thickness(11, 4, 11, 4),
+                    Margin = new Thickness(8, 0, 0, 0)
+                };
+                purge.Click += (o, ev) =>
+                {
+                    if (Dialog.Confirm(this, "彻底删除会话",
+                            "「" + s.Display + "」将被永久删除，无法恢复。", "删除", true))
+                        _engine?.PurgeSession(id);
+                };
+                acts.Children.Add(restore);
+                acts.Children.Add(purge);
+
+                var row = new Grid();
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                Grid.SetColumn(st, 0);
+                row.Children.Add(st);
+                Grid.SetColumn(acts, 1);
+                row.Children.Add(acts);
+
+                card.Child = row;
                 card.Cursor = Cursors.Hand;
                 card.MouseLeftButtonUp += (o, ev) =>
                 {

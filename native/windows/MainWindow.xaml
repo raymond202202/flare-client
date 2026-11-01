@@ -83,6 +83,16 @@
     <!-- ===== 侧栏会话项 ===== -->
     <DataTemplate x:Key="SessionItem">
       <Grid>
+        <!-- 右键菜单：结构照 Qt 0.6.191 rebuildMenu() 现场重建 ——
+             「置顶/取消置顶」的文案、「归档」还是「恢复+彻底删除」、末项的
+             「打开回收站」还是「返回最近会话」，都取决于当前项状态与当前视图，
+             静态 XAML + 转换器写出来是一堆互斥的 Visibility 触发器，反而看不清。
+             ContextMenu 放在 DataTemplate 根上（不是 ItemContainerStyle 的 Setter）：
+             Style 里的 UIElement 值会被所有项共享，WPF 会直接抛「同一实例挂两处」。 -->
+        <Grid.ContextMenu>
+          <ContextMenu Opened="OnSessionMenuOpened" Style="{StaticResource FlareMenu}" />
+        </Grid.ContextMenu>
+
         <!-- 分组标题行（今天 / 昨天 / 最近 7 天 / 更早）：路标，不是会话。
              加粗、字号 FontSmall-1.5、暖灰 #a89680、靠底对齐 —— 四组值逐字抄
              Qt appendSectionHeader，扫读时能一眼和会话名分开。

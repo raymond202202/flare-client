@@ -2,6 +2,7 @@ using System;
 using System.Collections.Specialized;
 using System.ComponentModel;
 using System.IO;
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
@@ -293,16 +294,131 @@ namespace FlareWin
             }
         }
 
-        private void OnArchived(object sender, RoutedEventArgs e)
+        private void OnArchived(object sender, RoutedEventArgs e) => OpenArchivePanel();
+
+        /// <summary>归档面板（回收站）：底部「归档」按钮与右键菜单末项共用。</summary>
+        private void OpenArchivePanel()
         {
-            // 归档列表复用同一个面板（只读浏览 + 点击载入）
+            // 归档列表复用同一个面板（只读浏览 + 点击载入），面板内可恢复 / 彻底删除
             var w = new ListPanelWindow("归档会话", "archived")
             {
-                Owner = this
+                Owner = this,
+                HostEngine = _engine
             };
             w.BindSessions(_engine.ArchivedSessions);
             _engine.LoadArchived();
             w.ShowDialog();
+            // 面板把 ShowingArchived 拨到了 true；关掉必须拨回来，
+            // 否则主列表接下来的回执都往 ArchivedSessions 里填，最近会话彻底不刷新
+            _engine.LoadSessions();
+        }
+
+        /// <summary>
+        /// 会话右键菜单：结构现场重建，对齐 Qt 0.6.191 rebuildMenu()。
+        ///
+        /// 为什么不在 XAML 里写成静态菜单 + 一堆 Visibility/Header 触发器：
+        /// 「置顶 / 取消置顶」的文案、「本项在最近列表还是在回收站」，都随项状态变，
+        /// 静态写出来是七八个互斥触发器，改一处要翻三遍，而且第一次弹菜单时
+        /// 绑定还没走完一轮，容易闪一下旧文案。现场造菜单就是几步 new。
+        /// </summary>
+        private void OnSessionMenuOpened(object sender, RoutedEventArgs e)
+        {
+            var cm = sender as ContextMenu;
+            if (cm == null) return;
+
+            // ContextMenu 挂在 DataTemplate 的项根 Grid 上，它和主窗口不在同一棵视觉树
+            // （Popup 断链），DataContext 的继承不可靠 —— 一律从 PlacementTarget 取。
+            var fe = cm.PlacementTarget as FrameworkElement;
+            var s = fe == null ? null : fe.DataContext as SessionInfo;
+
+            // 分组标题行（今天 / 昨天 / 📌 置顶）不是会话，右键多半是点偏了一行。
+            // 弹一个全是灰项的空壳菜单，不如干脆不弹。
+            if (s == null || s.IsHeader || string.IsNullOrEmpty(s.Id))
+            {
+                cm.IsOpen = false;
+                return;
+            }
+
+            // 截图样本只活在宿主里，引擎不认识这些 id，凡是会落库的动作一律禁用。
+            // CI 出图要求菜单项全是亮色（好核对顺序与样式），FLARE_GUI_DEMO_REAL=1
+            // 只在这种纯取证场景下放行；取证进程从不点任何菜单项，所以不会真落库。
+            var isDemo = s.Id.StartsWith("demo-")
+                         && Environment.GetEnvironmentVariable("FLARE_GUI_DEMO_REAL") != "1";
+            var pinned = _engine.IsPinned(s.Id);
+
+            cm.Items.Clear();
+
+            var miPin = new MenuItem { Header = pinned ? "📌 取消置顶" : "📌 置顶会话" };
+            miPin.Click += (o, ev) => _engine.TogglePin(s.Id);
+            cm.Items.Add(miPin);
+
+            var miRename = new MenuItem { Header = "✏️ 重命名会话", InputGestureText = "F2" };
+            miRename.IsEnabled = !isDemo;
+            miRename.Click += (o, ev) => RenameSession(s);
+            cm.Items.Add(miRename);
+
+            cm.Items.Add(new Separator());
+
+            // 归档箱里的项已经在箱里，「归档」没意义；换成正反两个真动作。
+            // 归档视图下主列表本身就是回收站，末项也就不该再指回回收站。
+            if (_engine.ShowingArchived)
+            {
+                var miBack = new MenuItem { Header = "♻️ 恢复会话" };
+                miBack.IsEnabled = !isDemo;
+                miBack.Click += (o, ev) => _engine.RestoreSession(s.Id);
+                cm.Items.Add(miBack);
+
+                var miPurge = new MenuItem { Header = "🔥 彻底删除" };
+                miPurge.IsEnabled = !isDemo;
+                miPurge.Click += (o, ev) =>
+                {
+                    if (Dialog.Confirm(this, "彻底删除会话",
+                            "「" + s.Display + "」将被永久删除，无法恢复。", "删除", true))
+                        _engine.PurgeSession(s.Id);
+                };
+                cm.Items.Add(miPurge);
+
+                cm.Items.Add(new Separator());
+                var miBackList = new MenuItem { Header = "↩️ 返回最近会话" };
+                miBackList.Click += (o, ev) => _engine.LoadSessions();
+                cm.Items.Add(miBackList);
+                return;
+            }
+
+            var miArchive = new MenuItem { Header = "📦 归档到归档箱" };
+            miArchive.IsEnabled = !isDemo;
+            miArchive.Click += (o, ev) => _engine.EndSession(s.Id);
+            cm.Items.Add(miArchive);
+
+            var miClear = new MenuItem { Header = "🧹 清空会话消息" };
+            miClear.IsEnabled = !isDemo;
+            miClear.Click += (o, ev) => ClearSession(s);
+            cm.Items.Add(miClear);
+
+            cm.Items.Add(new Separator());
+
+            var miBin = new MenuItem { Header = "🗑️ 打开回收站" };
+            miBin.Click += (o, ev) => OpenArchivePanel();
+            cm.Items.Add(miBin);
+        }
+
+        private void RenameSession(SessionInfo s)
+        {
+            var old = string.IsNullOrWhiteSpace(s.Title) ? s.Display : s.Title;
+            var name = Dialog.Prompt(this, "重命名会话", old);
+            if (name == null) return;
+            name = name.Trim();
+            // 空标题会让侧栏那行直接退化成预览首行，用户会以为没改成功；同名则是白跑一趟 IPC
+            if (name.Length == 0 || name == old) return;
+            _engine.RenameSession(s.Id, name);
+        }
+
+        private void ClearSession(SessionInfo s)
+        {
+            var ok = Dialog.Confirm(this, "清空会话消息",
+                "将删除「" + s.Display + "」的全部对话内容，会话本身保留。此操作不可撤销。",
+                "清空", true);
+            if (ok) _engine.ClearSession(s.Id);
         }
 
         private void OnMemories(object sender, RoutedEventArgs e)
@@ -369,6 +485,26 @@ namespace FlareWin
                     LogShot("search \"" + searchKw + "\"");
                     SearchBox.Text = searchKw;   // → TextChanged → 250ms 防抖 → search_sessions
                     Delay(1500, () => Shot("02-search"));
+                });
+            }
+
+            // FLARE_GUI_MENU=demo-2 → 打开该会话的右键菜单并单独出图。
+            // RenderTargetBitmap 只渲染可视树，Popup 走独立 HwndSource 拍不到，
+            // 所以菜单单独渲染一张 03-menu.png，主窗口另拍 03-menu-app.png，
+            // 两张在 CI 里拼成对照图（左侧栏 + 右侧菜单）。
+            var menuId = Environment.GetEnvironmentVariable("FLARE_GUI_MENU");
+            if (!string.IsNullOrEmpty(menuId))
+            {
+                Delay(8000, () =>
+                {
+                    // 前一步可能灌过搜索词，列表被过滤过 → 先清空并等防抖 + 回执，
+                    // 否则按 id 找索引会扑空（demo-2 未必含关键词）
+                    if (!string.IsNullOrEmpty(SearchBox.Text))
+                    {
+                        SearchBox.Text = "";
+                        Delay(900, () => OpenMenuShot(menuId));
+                    }
+                    else OpenMenuShot(menuId);
                 });
             }
 
@@ -459,6 +595,106 @@ namespace FlareWin
             SessionList.UpdateLayout();
             var picked = SessionList.SelectedItem as SessionInfo;
             LogShot("选中 idx=" + SessionList.SelectedIndex + " id=" + (picked == null ? "<null>" : picked.Id));
+        }
+
+        // ================= 右键菜单取证辅助 =================
+
+        /// <summary>选中目标会话 → 打开其右键菜单 → 记日志 → 拍两张图（主窗口 + 菜单本体）。</summary>
+        private void OpenMenuShot(string id)
+        {
+            var idx = IndexOfSession(id);
+            if (idx < 0) { LogShot("menu: 找不到会话 " + id + "（当前 " + SessionList.Items.Count + " 项）"); return; }
+            SessionList.SelectedIndex = idx;
+            SessionList.ScrollIntoView(SessionList.Items[idx]);
+            SessionList.UpdateLayout();
+            Delay(500, () =>
+            {
+                var cm = FindContextMenu(idx);
+                if (cm == null) { LogShot("menu: " + id + " 容器上没挂 ContextMenu"); return; }
+                cm.IsOpen = true;            // → Opened → OnSessionMenuOpened 现场造项
+                cm.UpdateLayout();
+                LogShot("menu: " + id + " items=" + cm.Items.Count + " → " + DescribeMenu(cm));
+                Shot("03-menu-app");
+                ShootMenu(cm, "03-menu");
+                cm.IsOpen = false;
+                LogShot("menu: 已关闭");
+            });
+        }
+
+        private int IndexOfSession(string id)
+        {
+            for (int i = 0; i < SessionList.Items.Count; i++)
+            {
+                var it = SessionList.Items[i] as SessionInfo;
+                if (it != null && it.Id == id) return i;
+            }
+            return -1;
+        }
+
+        private ContextMenu FindContextMenu(int idx)
+        {
+            var item = SessionList.ItemContainerGenerator.ContainerFromIndex(idx) as DependencyObject;
+            return item == null ? null : FindMenuIn(item);
+        }
+
+        private static ContextMenu FindMenuIn(DependencyObject d)
+        {
+            if (d == null) return null;
+            var fe = d as FrameworkElement;
+            if (fe != null && fe.ContextMenu != null) return fe.ContextMenu;
+            int n = VisualTreeHelper.GetChildrenCount(d);
+            for (int i = 0; i < n; i++)
+            {
+                var r = FindMenuIn(VisualTreeHelper.GetChild(d, i));
+                if (r != null) return r;
+            }
+            return null;
+        }
+
+        /// <summary>把菜单项写成一行日志：能直接看出顺序、分隔符、哪些被禁用。</summary>
+        private static string DescribeMenu(ContextMenu cm)
+        {
+            var sb = new StringBuilder();
+            foreach (var o in cm.Items)
+            {
+                if (sb.Length > 0) sb.Append(" | ");
+                var mi = o as MenuItem;
+                if (mi != null) sb.Append(mi.IsEnabled ? "" : "[禁]").Append(mi.Header);
+                else sb.Append("---");
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// 单独渲染菜单。ContextMenu 自己的 visual parent 是 PopupRoot，
+        /// 直接 Render 出来常常是空白，所以抓模板根 Border（x:Name="MenuShell"）。
+        /// </summary>
+        private void ShootMenu(ContextMenu cm, string name)
+        {
+            var dir = Environment.GetEnvironmentVariable("FLARE_GUI_SHOT");
+            if (string.IsNullOrEmpty(dir)) return;
+            try
+            {
+                Directory.CreateDirectory(dir);
+                var shell = cm.Template == null ? null
+                          : cm.Template.FindName("MenuShell", cm) as FrameworkElement;
+                var target = shell ?? cm;
+                target.UpdateLayout();
+                var w = (int)Math.Ceiling(target.ActualWidth);
+                var h = (int)Math.Ceiling(target.ActualHeight);
+                if (w <= 0 || h <= 0) { LogShot("menu shot 尺寸为 0，跳过"); return; }
+                var rtb = new RenderTargetBitmap(w, h, 96, 96, PixelFormats.Pbgra32);
+                rtb.Render(target);
+                var enc = new PngBitmapEncoder();
+                enc.Frames.Add(BitmapFrame.Create(rtb));
+                var p = Path.Combine(dir, name + ".png");
+                using (var fs = File.Create(p)) enc.Save(fs);
+                LogShot("menu shot " + p + " " + w + "x" + h);
+            }
+            catch (Exception ex)
+            {
+                LogShot("menu shot failed: " + ex.Message);
+            }
         }
 
         private static void LogShot(string s)

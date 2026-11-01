@@ -178,5 +178,88 @@
     <Setter Property="CornerRadius" Value="10" />
     <Setter Property="Padding" Value="14,12" />
   </Style>
+  <!-- ========== 右键菜单 ==========
+       对齐 Qt 0.6.191 FlareMenu：白底、1px 暖描边、10px 圆角，选中项浅橙圆角块。
+       模板必须重写 —— WPF 默认 ContextMenu 顶部有一条系统色边框、左侧留 22px 图标槽，
+       在浅橙底界面上是两块显眼的异色。外层 Margin=8 是给 DropShadowEffect 留出血位，
+       不留的话阴影会被 Popup 边界裁掉一半，看着像脏了。 -->
+  <Style x:Key="FlareMenu" TargetType="ContextMenu">
+    <Setter Property="Background" Value="{x:Static local:Theme.BgWindow}" />
+    <Setter Property="Foreground" Value="{x:Static local:Theme.TextMain}" />
+    <Setter Property="FontSize" Value="{x:Static local:Theme.FontList}" />
+    <Setter Property="BorderBrush" Value="{x:Static local:Theme.BorderSoft}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="Padding" Value="5" />
+    <Setter Property="SnapsToDevicePixels" Value="True" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ContextMenu">
+          <Border x:Name="MenuShell"
+                  Background="{TemplateBinding Background}"
+                  BorderBrush="{TemplateBinding BorderBrush}"
+                  BorderThickness="{TemplateBinding BorderThickness}"
+                  CornerRadius="10" Padding="{TemplateBinding Padding}" Margin="8">
+            <Border.Effect>
+              <DropShadowEffect BlurRadius="18" ShadowDepth="3" Direction="270"
+                                Opacity="0.16" Color="#4a2e0d" />
+            </Border.Effect>
+            <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle" />
+          </Border>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- 菜单项：隐式样式（无 x:Key）。菜单里只会出现一级项，所以模板不需要
+       Popup/子菜单分支 —— 换来的是一条能完整控制圆角与 hover 色的行。 -->
+  <Style TargetType="MenuItem">
+    <Setter Property="FontSize" Value="{x:Static local:Theme.FontList}" />
+    <Setter Property="Foreground" Value="{x:Static local:Theme.TextMain}" />
+    <Setter Property="Padding" Value="12,7" />
+    <Setter Property="SnapsToDevicePixels" Value="True" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="MenuItem">
+          <Border x:Name="bd" Background="Transparent" CornerRadius="7"
+                  Padding="{TemplateBinding Padding}" Margin="2,1">
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+              </Grid.ColumnDefinitions>
+              <TextBlock x:Name="txt" Grid.Column="0" Text="{TemplateBinding Header}"
+                         Foreground="{TemplateBinding Foreground}"
+                         FontSize="{TemplateBinding FontSize}"
+                         VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+              <TextBlock Grid.Column="1" Text="{TemplateBinding InputGestureText}"
+                         Foreground="{x:Static local:Theme.TextFaint}"
+                         FontSize="{x:Static local:Theme.FontSmall}"
+                         Margin="20,0,2,0" VerticalAlignment="Center" />
+            </Grid>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsHighlighted" Value="True">
+              <Setter TargetName="bd" Property="Background" Value="{x:Static local:Theme.HoverSoft}" />
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+              <Setter TargetName="txt" Property="Foreground" Value="{x:Static local:Theme.TextFaint}" />
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- 分隔线：默认 Separator 在浅色底上是准黑 1px，太硬；改成暖描边色 + 左右留白。 -->
+  <Style TargetType="Separator">
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Separator">
+          <Border Height="1" Margin="10,5" Background="{x:Static local:Theme.BorderSoft}" />
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
 
 </ResourceDictionary>
