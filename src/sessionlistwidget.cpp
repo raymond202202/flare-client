@@ -85,11 +85,6 @@ QString SessionListWidget::shortStamp(const QString &iso, const QDateTime &now)
     return FlareTime::listStamp(iso, now);
 }
 
-static QString shortTime(const QString &iso)
-{
-    return SessionListWidget::shortStamp(iso, QDateTime::currentDateTime());
-}
-
 // M13: 会话按时间分组。列表长了以后一屏全是「周三/周四」的 MM-dd，
 // 找「昨天聊的那个」只能一个个点开看。分组标题把扫读成本压到最低。
 // 纯函数，便于单测（不依赖当前时间，now 由调用方给）。
@@ -217,7 +212,9 @@ SessionListWidget::SessionListWidget(EngineBridge *bridge, QWidget *parent)
     // 必须开 wordWrap：关着的时候 Qt 会把 '\n' 折成 U+2028 压成一整行
     // 再按宽度硬裁，标题 / 预览 / 时间全挤在一起，尾部时间直接消失。
     m_list->setWordWrap(true);
-    m_list->setUniformItemSizes(true);
+    // 条目高度并不统一：分组标题要矮、会话条目固定两行 52px。开 uniformItemSizes
+    // 会把所有条目拉成同一高度，分组标题被撑成 52px 的空行，列表白占一屏。
+    m_list->setUniformItemSizes(false);
     m_list->setContextMenuPolicy(Qt::CustomContextMenu);
     layout->addWidget(m_list, 1);
 
@@ -600,7 +597,10 @@ void SessionListWidget::applySessions(const QJsonArray &sessions)
         const QString title = s.value(QStringLiteral("title")).toString().trimmed();
         const QString preview = previewLabel(s);
         const QString updated = s.value(QStringLiteral("updatedAt")).toString();
-        const QString stamp = updated.isEmpty() ? QString() : shortTime(updated);
+        // 第二行右端的时间列用紧凑口径（今天 HH:mm / 今年 MM-dd / 跨年 yy-MM-dd），
+        // 完整时间留给 tooltip，免得 168px 的侧栏被时间吃掉一半。
+        const QString stamp = updated.isEmpty() ? QString() : FlareTime::listStampCompact(updated);
+        const QString fullTime = updated.isEmpty() ? QString() : FlareTime::fullStamp(updated);
 
         // 空会话不该占列表：引擎建库就写 title='新会话'，既没有真标题、
         // 也没有首条消息预览 —— 这种行点开也是空的，纯噪音。
@@ -630,25 +630,20 @@ void SessionListWidget::applySessions(const QJsonArray &sessions)
         const int mainW = kItemTextWidth - pinW;
         QString mainText;
         QString secondLine;
+        // 第一行整行留给标题，时间挪到第二行右端单独成列 —— 时间挤在同一行时，
+        // 168px 的侧栏只够七八个汉字，所有会话都被截成「用一句话介…」，
+        // 名字越像越分不出，反倒更像重影。
+        const int timeW = stamp.isEmpty() ? 0 : fm.horizontalAdvance(stamp) + 8;
         if (!isPlaceholderTitle(title)) {
             mainText = clip(title, mainW);
             // 引擎把占位标题回退成首条消息之后，标题与预览常常是同一句话。
-            // 副行再复述一遍就是噪音，这时副行只留时间（全文仍在 tooltip 里）。
-            if (!preview.isEmpty() && !sameFactText(title, preview)) {
-                const QString tail = stamp.isEmpty()
-                        ? QString()
-                        : QStringLiteral("  ·  ") + stamp;
-                secondLine = clip(preview,
-                                  kItemTextWidth - fm.horizontalAdvance(tail)) + tail;
-            } else {
-                secondLine = elidePx(stamp, itemFont, kItemTextWidth);
-            }
+            // 副行再复述一遍就是噪音（全文仍在 tooltip 里），这种条目第二行只放时间。
+            if (!preview.isEmpty() && !sameFactText(title, preview))
+                secondLine = clip(preview, qMax(24, kItemTextWidth - timeW));
         } else if (!preview.isEmpty()) {
             mainText = clip(preview, mainW);
-            secondLine = elidePx(stamp, itemFont, kItemTextWidth);
         } else {
             mainText = QStringLiteral("新会话");
-            secondLine = elidePx(stamp, itemFont, kItemTextWidth);
         }
         if (pinned)
             mainText.prepend(QStringLiteral("📌 "));
@@ -663,20 +658,25 @@ void SessionListWidget::applySessions(const QJsonArray &sessions)
         }
 
         auto *item = new QListWidgetItem;
-        if (secondLine.isEmpty()) {
-            item->setText(mainText);
+        // 高度统一 52px（固定两行）：列表开了 uniformItemSizes，条目忽高忽低
+        // 会让下标和滚动位置错位。没有副行时第二行留空，右端只放时间列。
+        const int itemH = 52;
+        if (stamp.isEmpty() && secondLine.isEmpty()) {
+            item->setText(mainText); // 连时间都没有的条目交给基类单行绘制
+        } else if (secondLine.isEmpty()) {
+            item->setText(mainText + QLatin1Char('\n'));
         } else {
             item->setText(QStringLiteral("%1\n%2").arg(mainText, secondLine));
-            item->setSizeHint(QSize(kItemTextWidth, 52));
         }
+        item->setSizeHint(QSize(kItemTextWidth, itemH));
         // 侧栏只有 168px，副行塞不下「消息数」——把能区分同名会话的元信息全放 tooltip：
         // 同名 + 同分钟的重影会话，悬停就能看出是哪条（消息数差 4 倍很直观）。
         QString tip = preview.isEmpty() ? mainText : preview;
         const int msgCount = s.value(QStringLiteral("messageCount")).toInt();
         {
             QStringList meta;
-            if (!stamp.isEmpty())
-                meta << stamp;
+            if (!fullTime.isEmpty())
+                meta << fullTime;
             if (msgCount > 0)
                 meta << QStringLiteral("%1 条消息").arg(msgCount);
             if (!meta.isEmpty())
@@ -686,6 +686,8 @@ void SessionListWidget::applySessions(const QJsonArray &sessions)
         item->setData(kRoleId, id);
         item->setData(kRoleTitle, mainText);
         item->setData(kRolePreview, preview);
+        // 时间走单独角色，delegate 才能把它画成右对齐的一列（见 kFlareRoleTime）
+        item->setData(kFlareRoleTime, stamp);
         item->setFlags(item->flags() | Qt::ItemIsEditable);
         m_suppressItemChanged = true;
         m_list->addItem(item);

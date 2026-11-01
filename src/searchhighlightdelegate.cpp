@@ -72,8 +72,10 @@ void SearchHighlightDelegate::paint(QPainter *painter, const QStyleOptionViewIte
     initStyleOption(&opt, index);
     static const bool dbg = qEnvironmentVariableIsSet("FLARE_DEBUG_LIST");
     if (dbg) {
-        std::fprintf(stderr, "[HL] kw=%s text=%s\n", m_keyword.toUtf8().constData(),
-                     opt.text.left(40).replace(QLatin1Char('\n'), QLatin1Char('/')).toUtf8().constData());
+        std::fprintf(stderr, "[HL] rect=%dx%d kw=%s text=%s\n", opt.rect.width(), opt.rect.height(),
+                     m_keyword.toUtf8().constData(),
+                     QString(opt.text).replace(QChar(0x2028), QLatin1Char('/'))
+                         .replace(QChar(0x2029), QLatin1Char('/')).left(60).toUtf8().constData());
         std::fflush(stderr);
     }
 
@@ -85,9 +87,13 @@ void SearchHighlightDelegate::paint(QPainter *painter, const QStyleOptionViewIte
     text.replace(QChar(0x2029), QLatin1Char('\n'));
 
     const bool hit = !m_keyword.isEmpty() && text.contains(m_keyword, Qt::CaseInsensitive);
+    // 右对齐的时间列：宿主把它单独放在 kFlareRoleTime 里，不再混进第二行。
+    // 连续多条同名会话里，只有这一列是竖向齐的，扫一眼就能比对出差异。
+    const QString timeStr = index.data(kFlareRoleTime).toString();
+    const bool hasTime = !timeStr.isEmpty();
     // 单行项（分组标题等）交给基类；双行项必须自绘 —— 基类 paint 内部会重新
     // initStyleOption，把 opt.text 又换回 U+2028 的单行串，副行照样丢失。
-    if (text.isEmpty() || !text.contains(QLatin1Char('\n'))) {
+    if (text.isEmpty() || (!hasTime && !text.contains(QLatin1Char('\n')))) {
         QStyledItemDelegate::paint(painter, option, index);
         return;
     }
@@ -119,13 +125,30 @@ void SearchHighlightDelegate::paint(QPainter *painter, const QStyleOptionViewIte
     painter->save();
     painter->setClipRect(area);
     const int lineH = fm.height();
-    const int totalH = lineH * qMin<int>(lines.size(), 2);
-    int y = area.top() + (area.height() - totalH) / 2;
-    for (int i = 0; i < lines.size() && i < 2; ++i) {
-        const QRect lineRect(area.left(), y, area.width(), lineH);
-        drawLine(painter, lineRect, opt.font, lines.at(i), m_keyword,
-                 i == 0 ? mainFg : softFg, hlBg, i == 0 ? hlFg : hlFg);
-        y += lineH;
+    const int rows = qMin<int>(lines.size(), 2);
+    // 两行之间留 2px 呼吸位：紧贴时第二行（淡色副行）看起来像第一行的影子。
+    const int lineGap = 2;
+    const int totalH = rows > 1 ? lineH * 2 + lineGap : lineH;
+    const int y0 = area.top() + (area.height() - totalH) / 2;
+    const int timeW = hasTime ? fm.horizontalAdvance(timeStr) : 0;
+
+    // 时间画在「最后一行」的右端：标题独占第一行才不会被时间挤成半截，
+    // 而所有条目的时间都贴同一条右边缘，竖向扫一眼就是一列可比的刻度。
+    if (hasTime) {
+        const int timeRowY = rows > 1 ? y0 + lineH + lineGap : y0;
+        const QRect timeRect(area.right() - timeW + 1, timeRowY, timeW, lineH);
+        painter->setFont(opt.font);
+        painter->setPen(softFg);
+        painter->drawText(timeRect, Qt::AlignRight | Qt::AlignVCenter, timeStr);
+    }
+
+    drawLine(painter, QRect(area.left(), y0, area.width(), lineH), opt.font, lines.at(0),
+             m_keyword, mainFg, hlBg, hlFg);
+    if (rows > 1) {
+        QRect secondRect(area.left(), y0 + lineH + lineGap, area.width(), lineH);
+        if (hasTime)
+            secondRect.setWidth(qMax(0, area.width() - timeW - 6));
+        drawLine(painter, secondRect, opt.font, lines.at(1), m_keyword, softFg, hlBg, hlFg);
     }
     painter->restore();
 }

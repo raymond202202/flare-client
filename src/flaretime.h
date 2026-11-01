@@ -21,6 +21,12 @@ QDateTime parse(const QString &iso);
 // 列表条目：今天 HH:mm / 今年 MM-dd HH:mm / 跨年 yyyy-MM-dd
 QString listStamp(const QString &iso, const QDateTime &now = QDateTime());
 
+// 列表条目右侧的「时间列」：今天 HH:mm / 今年 MM-dd / 跨年 yy-MM-dd
+// 侧栏只有 168px，完整时间（MM-dd HH:mm）会占掉近一半宽度，把会话标题挤成
+// 五六个字。时间列只负责「竖向对齐、能比对出差异」，精确到分钟与完整日期
+// 留给 tooltip（见 SessionListWidget 条目 tip）。
+QString listStampCompact(const QString &iso, const QDateTime &now = QDateTime());
+
 // 分组标题：今天 / 昨天 / 最近 7 天 / 更早
 QString section(const QString &iso, const QDateTime &now = QDateTime());
 

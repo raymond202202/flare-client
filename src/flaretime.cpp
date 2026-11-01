@@ -66,6 +66,22 @@ QString FlareTime::listStamp(const QString &iso, const QDateTime &now)
     return dt.toString(QStringLiteral("yyyy-MM-dd"));
 }
 
+QString FlareTime::listStampCompact(const QString &iso, const QDateTime &now)
+{
+    const QDateTime dt = parse(iso);
+    if (!dt.isValid())
+        return iso;
+    const QDate today = effectiveNow(now).date();
+    // 分钟不能省：用户的会话多半挤在同一天，只到日期的话一列时间全是「10-30」，
+    // 等于白放一列。今天只留 HH:mm，是为了让最常看的那一段尽量窄。
+    if (dt.date() == today)
+        return dt.toString(QStringLiteral("HH:mm"));
+    if (dt.date().year() == today.year())
+        return dt.toString(QStringLiteral("MM-dd HH:mm"));
+    // 跨年把年份压成两位，四位年在 168px 的侧栏里太抢眼。
+    return dt.toString(QStringLiteral("yy-MM-dd HH:mm"));
+}
+
 QString FlareTime::section(const QString &iso, const QDateTime &now)
 {
     const QDateTime dt = parse(iso);

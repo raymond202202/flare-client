@@ -110,6 +110,28 @@ private slots:
                  QStringLiteral("2025-03-15"));
     }
 
+    // 时间列（列表第二行右端）必须比 listStamp 更窄，但又不能丢分钟 ——
+    // 用户的会话挤在同一天，只到日期的话一列时间全是「10-30」，等于白放。
+    void listStampCompactKeepsMinutes()
+    {
+        const QDateTime now = QDateTime(QDate(2026, 10, 30), QTime(15, 0));
+        const QDateTime today = now.addSecs(-600);
+        QCOMPARE(FlareTime::listStampCompact(today.toUTC().toString(Qt::ISODate), now),
+                 today.toString(QStringLiteral("HH:mm")));
+
+        const QDateTime spring = QDateTime(QDate(2026, 3, 15), QTime(9, 0));
+        QCOMPARE(FlareTime::listStampCompact(spring.toUTC().toString(Qt::ISODate), now),
+                 QStringLiteral("03-15 09:00"));
+
+        const QDateTime old = QDateTime(QDate(2025, 3, 15), QTime(9, 0));
+        QCOMPARE(FlareTime::listStampCompact(old.toUTC().toString(Qt::ISODate), now),
+                 QStringLiteral("25-03-15 09:00"));
+
+        QCOMPARE(FlareTime::listStampCompact(QString()), QString());
+        QCOMPARE(FlareTime::listStampCompact(QStringLiteral("不是时间")),
+                 QStringLiteral("不是时间"));
+    }
+
     void messageStampCarriesDayWhenNeeded()
     {
         const QDateTime now = QDateTime(QDate(2026, 10, 30), QTime(15, 0));

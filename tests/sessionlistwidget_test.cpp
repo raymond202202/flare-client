@@ -9,6 +9,7 @@
 #include <QSettings>
 #include <QStandardPaths>
 #include "../src/sessionlistwidget.h"
+#include "../src/searchhighlightdelegate.h"
 #include "engine_bridge.h"
 
 // 列表里所有分组标题（不可选中、无 sessionId 的项）
@@ -54,6 +55,7 @@ private slots:
     void archivedEventPopulatesList();
     // M13
     void sessionsGroupedByDay();
+    void sameNameSessionsGetSeparateTimeColumn();
     void searchViewHasNoSectionHeaders();
     void shortStampKeepsYearAcrossYears();
     void keyboardNavSwitchesSessionAndSkipsHeaders();
@@ -308,6 +310,45 @@ void SessionListWidgetTest::sessionsGroupedByDay()
     QCOMPARE(header->data(Qt::UserRole).toString(), QString());
     w.list()->itemClicked(header);
     QCOMPARE(spy.count(), 0);
+}
+
+// 0.6.187：连续多条同名会话在列表里长得一模一样，用户称之为「重影」。
+// 修复口径：标题独占第一行（不被时间挤短），时间单独占第二行右端一列，
+// 且必须带分钟 —— 会话多半挤在同一天，只到日期的话整列时间全一样。
+void SessionListWidgetTest::sameNameSessionsGetSeparateTimeColumn()
+{
+    EngineBridge bridge;
+    SessionListWidget w(&bridge);
+
+    const QDateTime now = QDateTime::currentDateTime();
+    const auto iso = [](const QDateTime &dt) { return dt.toUTC().toString(Qt::ISODate); };
+    const QString title = QStringLiteral("用一句话介绍你自己");
+
+    QJsonArray arr;
+    arr.append(QJsonObject{{"id", "same-a"}, {"title", title},
+                           {"updatedAt", iso(now.addSecs(-1800))}});
+    arr.append(QJsonObject{{"id", "same-b"}, {"title", title},
+                           {"updatedAt", iso(now.addSecs(-3600))}});
+    arr.append(QJsonObject{{"id", "same-c"}, {"title", title},
+                           {"updatedAt", iso(now.addSecs(-5400))}});
+    w.onEngineEvent(QJsonObject{{"type", "sessions"}, {"sessions", arr}});
+    QCOMPARE(w.count(), 3);
+
+    QSet<QString> stamps;
+    for (int i = 0; i < 3; ++i) {
+        QListWidgetItem *it = w.sessionItem(i);
+        const QString text = it->text();
+        // 两行：第一行是完整标题，第二行留给右端时间列
+        QVERIFY(text.contains(QLatin1Char('\n')));
+        QCOMPARE(text.section(QLatin1Char('\n'), 0, 0), title);
+        // 时间不进正文，走独立角色；否则会被预览挤到看不见的地方
+        const QString stamp = it->data(kFlareRoleTime).toString();
+        QVERIFY(!stamp.isEmpty());
+        QVERIFY(!text.contains(stamp));
+        stamps.insert(stamp);
+        QCOMPARE(it->sizeHint().height(), 52);
+    }
+    QCOMPARE(stamps.size(), 3); // 三条同名会话的时间必须互不相同
 }
 
 // M7-2 / M8: archived_sessions 事件 → 归档视图内填充列表
