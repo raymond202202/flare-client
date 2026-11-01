@@ -107,6 +107,22 @@ namespace FlareWin
         /// <summary>分组标题文字，仅 IsHeader 为真时有效。</summary>
         public string HeaderText { get; set; }
 
+        /// <summary>
+        /// 该会话是否被置顶。置顶是**本地偏好**，不进引擎库（Qt 侧同样存 QSettings 的
+        /// sessions/pinned），所以引擎回执里没有这个字段，由宿主按 id 对照填。
+        /// </summary>
+        public bool Pinned { get; set; }
+
+        /// <summary>
+        /// 侧栏列表项实际绘制的文本：置顶项前面缀 📌。
+        /// 与 Display 分开是有意的 —— 顶部标题栏（ChatTitle）用 Display 的纯文本，
+        /// 那里多一颗图钉只是噪音；Qt sessionlistwidget.cpp:655 也只 prepend 到 mainText。
+        /// </summary>
+        public string ListText
+        {
+            get { return Pinned ? "📌 " + Display : Display; }
+        }
+
         /// <summary>本地时间的更新时间，分组用。引擎给 UTC，不转本地会把夜里 8 点后的会话归到第二天。</summary>
         public DateTime? UpdatedLocal { get { return ParseUpdated(); } }
 

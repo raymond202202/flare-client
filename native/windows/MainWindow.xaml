@@ -104,7 +104,7 @@
 
           <!-- Foreground 必须写在 Style 里，不能写成 TextBlock 的属性：
                本地值优先级高于 Style 触发器，写成属性后选中态永远变不成白字。 -->
-          <TextBlock Grid.Column="0" Text="{Binding Display}"
+          <TextBlock Grid.Column="0" Text="{Binding ListText}"
                      TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"
                      FontSize="{x:Static local:Theme.FontList}"
                      VerticalAlignment="Center">
@@ -164,6 +164,7 @@
         <Grid.RowDefinitions>
           <RowDefinition Height="Auto" />
           <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
           <RowDefinition Height="*" />
           <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
@@ -184,8 +185,42 @@
                 HorizontalAlignment="Stretch" Margin="0,0,0,10"
                 Click="OnNewChat" />
 
+        <!-- 搜索框：对齐 Qt sessionlistwidget.cpp:204-210 的 QLineEdit ——
+             白底、1px #fde6bf 边、圆角 6、padding 6/8、13px #4b5563，聚焦边框转橙。
+             .NET 4.8 的 TextBox 没有 PlaceholderText，水印用叠加 TextBlock 做
+             （同输入区 InputPlaceholder 的老办法），按 Text.Length 切可见性 ——
+             不用 IsFocused 判断：鼠标点走时水印会在空框里闪一下。 -->
+        <Grid Grid.Row="2" Margin="0,0,0,10">
+          <Border>
+            <Border.Style>
+              <Style TargetType="Border">
+                <Setter Property="Background" Value="#ffffff" />
+                <Setter Property="BorderBrush" Value="#fde6bf" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CornerRadius" Value="6" />
+                <Style.Triggers>
+                  <DataTrigger Value="True"
+                               Binding="{Binding IsKeyboardFocusWithin, ElementName=SearchBox}">
+                    <Setter Property="BorderBrush" Value="#f97316" />
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </Border.Style>
+            <TextBox x:Name="SearchBox" BorderThickness="0" Background="Transparent"
+                     FontSize="{x:Static local:Theme.FontList}"
+                     Foreground="{x:Static local:Theme.TextSoft}"
+                     Padding="8,6" VerticalContentAlignment="Center"
+                     TextChanged="OnSearchTextChanged"
+                     PreviewKeyDown="OnSearchKeyDown" />
+          </Border>
+          <TextBlock x:Name="SearchPlaceholder" Text="🔍 搜索会话…" IsHitTestVisible="False"
+                     FontSize="{x:Static local:Theme.FontList}"
+                     Foreground="{x:Static local:Theme.TextFaint}"
+                     Margin="10,0,0,0" VerticalAlignment="Center" />
+        </Grid>
+
         <!-- 会话列表 -->
-        <Grid Grid.Row="2">
+        <Grid Grid.Row="3">
           <ListBox x:Name="SessionList"
                    ItemsSource="{Binding Sessions}"
                    ItemTemplate="{StaticResource SessionItem}"
@@ -200,7 +235,7 @@
         </Grid>
 
         <!-- 底部动作 -->
-        <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,10,0,0">
+        <StackPanel Grid.Row="4" Orientation="Horizontal" Margin="0,10,0,0">
           <Button Content="归档" Style="{StaticResource GhostBtn}" Click="OnArchived" />
           <Button Content="记忆" Style="{StaticResource GhostBtn}" Click="OnMemories" />
           <Button Content="技能" Style="{StaticResource GhostBtn}" Click="OnTools" />

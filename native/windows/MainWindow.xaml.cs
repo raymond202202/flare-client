@@ -16,6 +16,7 @@ namespace FlareWin
     {
         private readonly Engine _engine = new Engine();
         private DispatcherTimer _breathTimer;
+        private DispatcherTimer _searchTimer;
         private double _phase;
 
         public MainWindow()
@@ -175,6 +176,86 @@ namespace FlareWin
             }
         }
 
+        // ================= 搜索 =================
+
+        /// <summary>
+        /// 搜索框输入：250ms 防抖后问引擎（Qt sessionlistwidget.cpp:296-298 同一条）。
+        /// 清空时**不等防抖**——用户点了叉还要愣 250ms 才看到列表回来，像卡住了。
+        /// </summary>
+        private void OnSearchTextChanged(object sender, TextChangedEventArgs e)
+        {
+            SearchPlaceholder.Visibility = SearchBox.Text.Length == 0
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+
+            // 立刻同步给引擎：它拿这个判「分组标题插不插」。
+            // 搜索激活时还按今天/昨天/更早分组只是噪音（Qt :604 的注释原话）。
+            _engine.SearchQuery = SearchBox.Text;
+
+            if (SearchBox.Text.Trim().Length == 0)
+            {
+                StopSearchTimer();
+                _engine.ClearSearch();
+                return;
+            }
+
+            if (_searchTimer == null)
+            {
+                _searchTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+                _searchTimer.Tick += (s2, e2) =>
+                {
+                    StopSearchTimer();
+                    _engine.SearchSessions(SearchBox.Text);
+                };
+            }
+            // 攒一下再发：中文输入法的拼音过程、连续退格都不该每帧打一次全表 LIKE
+            _searchTimer.Stop();
+            _searchTimer.Start();
+        }
+
+        private void StopSearchTimer()
+        {
+            if (_searchTimer != null) _searchTimer.Stop();
+        }
+
+        /// <summary>搜索框里敲 ↓ 直接进结果列表（Qt :290 同一条）；Esc 清空回到原视图。</summary>
+        private void OnSearchKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Down)
+            {
+                e.Handled = true;
+                var idx = FirstSelectableIndex();
+                if (idx >= 0) SessionList.SelectedIndex = idx;
+                return;
+            }
+            if (e.Key == Key.Escape && SearchBox.Text.Length > 0)
+            {
+                e.Handled = true;
+                SearchBox.Text = "";
+            }
+        }
+
+        /// <summary>首个能选中的行。分组标题行的 Id 是空串且 IsHeader，跳过它。</summary>
+        private int FirstSelectableIndex()
+        {
+            for (var i = 0; i < _engine.Sessions.Count; i++)
+                if (!_engine.Sessions[i].IsHeader) return i;
+            return -1;
+        }
+
+        /// <summary>Ctrl+F 聚焦搜索框（Qt mainwindow.cpp 同一条快捷键）。</summary>
+        protected override void OnPreviewKeyDown(KeyEventArgs e)
+        {
+            if (!e.Handled && e.Key == Key.F && (Keyboard.Modifiers & ModifierKeys.Control) != 0)
+            {
+                e.Handled = true;
+                SearchBox.Focus();
+                SearchBox.SelectAll();
+                return;
+            }
+            base.OnPreviewKeyDown(e);
+        }
+
         private void OnSend(object sender, RoutedEventArgs e) => DoSend();
 
         private void DoSend()
@@ -276,6 +357,20 @@ namespace FlareWin
 
             // 启动 3.5s 后：01-main
             Delay(3500, () => Shot("01-main"));
+
+            // FLARE_GUI_SEARCH=Go → 01-main 拍完再灌关键词，等防抖 + 回执 + 重排都落定
+            // 之后补一张 02-search。这张专门用来验两件事：搜索态下**没有**分组标题，
+            // 置顶项仍在最前且带 📌 前缀。
+            var searchKw = Environment.GetEnvironmentVariable("FLARE_GUI_SEARCH");
+            if (!string.IsNullOrEmpty(searchKw))
+            {
+                Delay(4200, () =>
+                {
+                    LogShot("search \"" + searchKw + "\"");
+                    SearchBox.Text = searchKw;   // → TextChanged → 250ms 防抖 → search_sessions
+                    Delay(1500, () => Shot("02-search"));
+                });
+            }
 
             var smoke = Environment.GetEnvironmentVariable("FLARE_GUI_SMOKE");
             if (string.IsNullOrEmpty(smoke)) return;

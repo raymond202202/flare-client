@@ -68,6 +68,168 @@ namespace FlareWin
             set => Set(ref _showingArchived, value);
         }
 
+        // ================= 搜索 / 置顶（本地偏好，一律不进引擎库） =================
+
+        /// <summary>
+        /// 搜索框里的**当前**文本。每次 TextChanged 由宿主同步进来。
+        /// 与 _inflightQuery 分开是有意的：它决定「分组标题要不要插」，而 Qt 判的
+        /// 也是搜索框当前文本（sessionlistwidget.cpp:604）；用 inflight 的话，
+        /// 防抖窗口里输入框已变、关键词还没发出，会漏插或多插一次标题。
+        /// </summary>
+        private string _searchQuery = "";
+        public string SearchQuery
+        {
+            get { return _searchQuery; }
+            set { _searchQuery = value ?? ""; }
+        }
+
+        /// <summary>已发出、尚未回执的搜索关键词，用于丢弃迟到回执。</summary>
+        private string _inflightQuery = "";
+
+        /// <summary>置顶会话 id 集合。落 INI 的 [sessions] pinned，与 Qt 客户端同路径同键。</summary>
+        private readonly HashSet<string> _pinned = new HashSet<string>(StringComparer.Ordinal);
+
+        /// <summary>
+        /// 置顶偏好的落地文件。Windows 下 Qt 的 QSettings(UserScope) 就是
+        /// %APPDATA%\flare\flare-client.ini，这里刻意用同一路径、同一 [sessions] pinned 键，
+        /// 将来两个壳切着装，置顶跟着走，不必迁移（Linux 版对应 ~/.config/flare/flare-client.ini）。
+        /// </summary>
+        public static string PinnedIniPath
+        {
+            get
+            {
+                var dir = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "flare");
+                return Path.Combine(dir, "flare-client.ini");
+            }
+        }
+
+        private void LoadPinned()
+        {
+            _pinned.Clear();
+            try
+            {
+                var path = PinnedIniPath;
+                if (!File.Exists(path)) return;
+                foreach (var raw in File.ReadAllLines(path, Encoding.UTF8))
+                {
+                    var line = raw.Trim();
+                    var eq = line.IndexOf('=');
+                    if (eq <= 0) continue;
+                    if (!line.Substring(0, eq).Trim().Equals("pinned", StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    // QSettings 把 QStringList 写成「a, b, c」一行；顺手剥掉可能带的引号
+                    foreach (var part in line.Substring(eq + 1).Split(','))
+                    {
+                        var id = part.Trim().Trim('"');
+                        if (id.Length > 0) _pinned.Add(id);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Dbg("!! pinned load failed: " + ex.Message);
+            }
+        }
+
+        private void SavePinned()
+        {
+            var path = PinnedIniPath;
+            var tmp = path + ".tmp";
+            try
+            {
+                var dir = Path.GetDirectoryName(path);
+                if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+
+                // 保留文件里的其它键：这个 INI 将来还会存窗口位置等宿主偏好，
+                // 整份覆盖等于把它们一起清了。
+                var lines = File.Exists(path)
+                    ? new List<string>(File.ReadAllLines(path, Encoding.UTF8))
+                    : new List<string>();
+
+                var ids = new List<string>(_pinned);
+                ids.Sort(StringComparer.Ordinal);
+                var value = "pinned=" + string.Join(", ", ids.ToArray());
+
+                var replaced = false;
+                for (var i = 0; i < lines.Count; i++)
+                {
+                    var t = lines[i].Trim();
+                    var eq = t.IndexOf('=');
+                    if (eq > 0 && t.Substring(0, eq).Trim().Equals("pinned", StringComparison.OrdinalIgnoreCase))
+                    {
+                        lines[i] = value;
+                        replaced = true;
+                        break;
+                    }
+                }
+                if (!replaced)
+                {
+                    // 没有 [sessions] 段就补一段，别把键塞进别人的段里
+                    var hasSection = false;
+                    foreach (var l in lines)
+                        if (l.Trim().Equals("[sessions]", StringComparison.OrdinalIgnoreCase)) { hasSection = true; break; }
+                    if (!hasSection) lines.Add("[sessions]");
+                    lines.Add(value);
+                }
+
+                // 先写临时文件再原子替换：写到一半崩掉不至于把整份偏好清空
+                File.WriteAllLines(tmp, lines.ToArray(), new UTF8Encoding(false));
+                try
+                {
+                    if (File.Exists(path)) File.Replace(tmp, path, null);
+                    else File.Move(tmp, path);
+                }
+                catch
+                {
+                    File.Copy(tmp, path, true);
+                    try { File.Delete(tmp); } catch { }
+                }
+            }
+            catch (Exception ex)
+            {
+                Dbg("!! pinned save failed: " + ex.Message);
+            }
+        }
+
+        public bool IsPinned(string id)
+        {
+            return !string.IsNullOrEmpty(id) && _pinned.Contains(id);
+        }
+
+        /// <summary>切换置顶并立刻重排当前列表。与 Qt 一致：只动本地偏好，不通知引擎。</summary>
+        public void TogglePin(string id)
+        {
+            if (string.IsNullOrEmpty(id)) return;
+            if (!_pinned.Remove(id)) _pinned.Add(id);
+            Dbg((_pinned.Contains(id) ? "pin " : "unpin ") + id);
+            SavePinned();
+            // 数据一条没变，重新问引擎是白费一轮 IPC：直接拿当前集合重算分组与顺序
+            ApplyDaySections(ShowingArchived ? ArchivedSessions : Sessions);
+        }
+
+        /// <summary>发出搜索。limit=30 与 Qt 一致（sessionlistwidget.cpp:542）。</summary>
+        public void SearchSessions(string query, int limit = 30)
+        {
+            var q = (query ?? "").Trim();
+            if (q.Length == 0) return;
+            _inflightQuery = q;
+            var o = New("search_sessions");
+            // 字段名照抄引擎 protocol.go 的 Request：query / limit / archived
+            o["query"] = q;
+            o["limit"] = limit;
+            // 搜索范围跟着视图走：回收站里搜的是归档集合，引擎负责分集合，宿主不拼条件
+            o["archived"] = ShowingArchived;
+            Send(o);
+        }
+
+        /// <summary>清空搜索 → 立刻回到当前视图，不等防抖（Qt :518 同一条）。</summary>
+        public void ClearSearch()
+        {
+            _inflightQuery = "";
+            if (ShowingArchived) LoadArchived(); else LoadSessions();
+        }
+
         private string _modelName = "";
         public string ModelName
         {
@@ -151,6 +313,9 @@ namespace FlareWin
         public void Start()
         {
             if (_proc != null) return;
+            // 置顶偏好先读进来：首次 recent_sessions 回来时 ApplyDaySections 就要用它，
+            // 晚一步读会让「📌 置顶」组在启动后的第一屏里缺一条。
+            LoadPinned();
             var exe = LocateEngine();
             if (exe == null)
             {
@@ -327,6 +492,16 @@ namespace FlareWin
 
         public void LoadSessions() { ShowingArchived = false; Send(New("recent_sessions")); }
         public void LoadArchived() { ShowingArchived = true; Send(New("archived_sessions")); }
+
+        /// <summary>
+        /// 动作类请求（重命名/归档/清空/恢复/彻底删除）回执后重新拉一次当前视图。
+        /// 搜索激活时回来的是搜索视图，清空则回默认视图 —— 与 Qt 「ok 回执 → refresh()」一致。
+        /// </summary>
+        public void RefreshCurrentView()
+        {
+            if (SearchQuery.Trim().Length > 0) { SearchSessions(SearchQuery); return; }
+            if (ShowingArchived) LoadArchived(); else LoadSessions();
+        }
         public void LoadModels() => Send(New("models"));
         public void LoadMemories() => Send(New("list_memories"));
         public void LoadTools() => Send(New("tools"));
@@ -506,14 +681,43 @@ namespace FlareWin
 
                 case "sessions":
                 case "recent_sessions":
-                    FillSessions(Sessions, obj);
+                    // 先置视图再填：ApplyDaySections 靠 ShowingArchived 判「要不要插分组标题」，
+                    // 顺序反了会让回收站里也长出「今天/昨天」，或让主列表反而没有分组。
                     ShowingArchived = false;
+                    FillSessions(Sessions, obj);
                     break;
 
                 case "archived_sessions":
-                    FillSessions(ArchivedSessions, obj);
                     ShowingArchived = true;
+                    FillSessions(ArchivedSessions, obj);
                     break;
+
+                case "search_sessions":
+                {
+                    // 搜索命中。引擎在回执里回显 query / archived，两个都要校对：
+                    // ①快速改关键词时先发的那次可能后到，直接应用会把列表顶成上一个
+                    //   关键词的结果，而搜索框写着新词 —— 用户看到「搜的不是我打的字」；
+                    // ②关键词相同也可能是跨视图的旧回执（在回收站搜过「灵感」，切回主
+                    //   列表再搜「灵感」，先发的归档查询关键词一致），光比 query 挡不住。
+                    // 逐条对应 Qt sessionlistwidget.cpp:470-497。
+                    var echoed = ((string)obj["query"] ?? "").Trim();
+                    var want = SearchQuery.Trim();
+                    if (want.Length == 0) break;   // 用户已经把搜索框清空，这批结果没用了
+                    var echoedArchived = obj["archived"] != null && obj["archived"].Type != JTokenType.Null
+                                         && (bool)obj["archived"];
+                    if (echoed.Length > 0 && echoed != want)
+                    {
+                        Dbg("SEARCH_DROP stale=" + echoed + " current=" + want);
+                        break;
+                    }
+                    if (echoedArchived != ShowingArchived)
+                    {
+                        Dbg("SEARCH_DROP view echoed_archived=" + echoedArchived + " current=" + ShowingArchived);
+                        break;
+                    }
+                    FillSessions(ShowingArchived ? ArchivedSessions : Sessions, obj, true);
+                    break;
+                }
 
                 case "session_created":
                 {
@@ -621,7 +825,7 @@ namespace FlareWin
             return t.ToString(Formatting.Indented);
         }
 
-        private void FillSessions(ObservableCollection<SessionInfo> target, JObject obj)
+        private void FillSessions(ObservableCollection<SessionInfo> target, JObject obj, bool isSearch = false)
         {
             target.Clear();
             if (!(obj["sessions"] is JArray arr)) return;
@@ -635,17 +839,25 @@ namespace FlareWin
                 {
                     Id = id,
                     Title = title,
+                    // 搜索回执的 preview 是「命中那段文字的上下文」，recent_sessions 的是首条消息。
+                    // 两者都是纯事实，这里一视同仁地吃下来即可（不拼措辞）。
                     Preview = (string)it["preview"] ?? "",
                     UpdatedAt = (string)it["updatedAt"] ?? (string)it["updated_at"] ?? "",
-                    Count = it["count"] != null ? (int?)it["count"] ?? 0 : 0
+                    Count = it["count"] != null ? (int?)it["count"] ?? 0
+                         : (it["messageCount"] != null ? (int?)it["messageCount"] ?? 0 : 0),
+                    Pinned = IsPinned(id)
                 });
             }
 
             // 截图取证开关：CI 的库里没有历史会话，recent_sessions 恒定回空数组，
             // 于是「单行条目 + 右端时间列 + 超长标题按宽度省略」这套最关键的样式
             // 永远进不了离屏截图 —— 改坏了也拍不出来。FLARE_GUI_DEMO 显式开启才灌样本。
+            //
+            // 搜索路径也灌，但要**按关键词过滤**：CI 里引擎同样搜不出东西（库是空的），
+            // 不灌就永远拍不到「搜索态下没有分组标题、置顶仍排最前」这两条关键行为。
+            // 过滤只作用于样本，不影响真实回执；线上环境压根没有 FLARE_GUI_DEMO。
             if (target.Count == 0 && !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("FLARE_GUI_DEMO")))
-                InjectDemoSessions(target);
+                InjectDemoSessions(target, isSearch ? SearchQuery : null);
 
             // 分组放在最后一步：样本注入之后、写进集合之前只此一次机会，
             // 早于注入就会把分组标题和会话项拆成两份对不齐的数据。
@@ -653,12 +865,16 @@ namespace FlareWin
         }
 
         /// <summary>
-        /// 按时间插分组标题行（今天 / 昨天 / 最近 7 天 / 更早）—— 与 Qt
+        /// 按时间插分组标题行（📌 置顶 / 今天 / 昨天 / 最近 7 天 / 更早）—— 与 Qt
         /// sessionlistwidget.cpp 的 appendSectionHeader 同构：那边也是往同一个
         /// QListWidget 里塞一条 NoItemFlags 的标题项，不是另建一套分组控件。
         /// 分组控件会和虚拟化、滚动、单选互斥三处同时打架，还得再维护两条滚动同步。
+        ///
+        /// groupByDay 传 null 表示「按当前状态自己判」：搜索激活、或站在回收站视图时
+        /// 一律不插标题（Qt sessionlistwidget.cpp:604 同一条）。删空列表后用户再也
+        /// 找不到回收站入口那类坑，就是这条规则没抄全埋下的。
         /// </summary>
-        private static void ApplyDaySections(ObservableCollection<SessionInfo> target)
+        private void ApplyDaySections(ObservableCollection<SessionInfo> target, bool? groupByDay = null)
         {
             if (target.Count == 0) return;
             var rows = new List<SessionInfo>();
@@ -668,8 +884,13 @@ namespace FlareWin
 
             // 引擎返回理论上已按 updatedAt 倒序；显式再排一次，否则同一分组会被
             // 中间插进来的一条旧会话截断，列表里出现两个「更早」。
+            // 置顶项一律排最前（Qt :557 把 pinned 与 normal 分成两段再拼起来）：
+            // 置顶的意义就是「永远在顶上」，混在时间序里等于没置顶。
             rows.Sort(delegate (SessionInfo a, SessionInfo b)
             {
+                var pa = a.Pinned ? 0 : 1;
+                var pb = b.Pinned ? 0 : 1;
+                if (pa != pb) return pa.CompareTo(pb);
                 var x = a.UpdatedLocal; var y = b.UpdatedLocal;
                 if (x == null && y == null) return 0;
                 if (x == null) return 1;
@@ -677,15 +898,24 @@ namespace FlareWin
                 return y.Value.CompareTo(x.Value);
             });
 
+            // 外部重排（置顶切换）后 Pinned 标记要跟着最新的 INI 走，
+            // 否则同一次会话内「取消置顶」后图标还挂着。
+            foreach (var s in rows) s.Pinned = IsPinned(s.Id);
+
+            var group = groupByDay ?? (SearchQuery.Trim().Length == 0 && !ShowingArchived);
+
             target.Clear();
             string cur = null;
             foreach (var s in rows)
             {
-                var sec = SessionInfo.SectionOf(s.UpdatedLocal);
-                if (sec != cur)
+                if (group)
                 {
-                    target.Add(new SessionInfo { Id = "", IsHeader = true, HeaderText = sec, Title = sec });
-                    cur = sec;
+                    var sec = s.Pinned ? "📌 置顶" : SessionInfo.SectionOf(s.UpdatedLocal);
+                    if (sec != cur)
+                    {
+                        target.Add(new SessionInfo { Id = "", IsHeader = true, HeaderText = sec, Title = sec });
+                        cur = sec;
+                    }
                 }
                 target.Add(s);
             }
@@ -695,17 +925,32 @@ namespace FlareWin
         /// 仅用于离屏截图取证：造几条样本会话，时间跨度覆盖三种时间口径，
         /// 标题长度拉到一定会触发 TextTrimming 的程度。
         /// </summary>
-        private static void InjectDemoSessions(ObservableCollection<SessionInfo> target)
+        private void InjectDemoSessions(ObservableCollection<SessionInfo> target, string filter = null)
         {
             var now = DateTime.UtcNow;
-            Action<string, string, DateTime> add = (id, title, when) => target.Add(new SessionInfo
+            var hasFilter = !string.IsNullOrEmpty(filter);
+            // FLARE_GUI_DEMO_PIN=demo-2,demo-5 可让取证截图自带「📌 置顶」组：
+            // 置顶是本地 INI 偏好，CI 的 runner 上没有这份文件，不显式指定就永远拍不到。
+            var pinEnv = Environment.GetEnvironmentVariable("FLARE_GUI_DEMO_PIN") ?? "";
+            foreach (var raw in pinEnv.Split(','))
             {
-                Id = id,
-                Title = title,
-                Preview = "",
-                UpdatedAt = when.ToString("yyyy-MM-ddTHH:mm:ss") + "Z",
-                Count = 1
-            });
+                var id = raw.Trim();
+                if (id.Length > 0) _pinned.Add(id);
+            }
+            Action<string, string, DateTime> add = (id, title, when) =>
+            {
+                // 搜索取证：只留标题里真含关键词的样本，模拟引擎的过滤结果
+                if (hasFilter && title.IndexOf(filter, StringComparison.OrdinalIgnoreCase) < 0) return;
+                target.Add(new SessionInfo
+                {
+                    Id = id,
+                    Title = title,
+                    Preview = "",
+                    UpdatedAt = when.ToString("yyyy-MM-ddTHH:mm:ss") + "Z",
+                    Count = 1,
+                    Pinned = _pinned.Contains(id)
+                });
+            };
             // 今天 → HH:mm；今年 → MM-dd HH:mm；跨年 → yy-MM-dd HH:mm
             add("demo-1", "帮我把这段 Go 的并发逻辑改成带超时控制的写法", now.AddMinutes(-8));
             add("demo-2", "灵感稍纵即逝——怎么设计一个不打断思路的速记入口", now.AddHours(-3));
