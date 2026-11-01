@@ -214,7 +214,9 @@ SessionListWidget::SessionListWidget(EngineBridge *bridge, QWidget *parent)
         "QListWidget::item:hover { background:#ffedd0; }"
         "QListWidget::item:selected { background:#f97316; color:white; }"));
     // 硬换行（标题/预览两行）继续生效，但绝不软折行
-    m_list->setWordWrap(false);
+    // 必须开 wordWrap：关着的时候 Qt 会把 '\n' 折成 U+2028 压成一整行
+    // 再按宽度硬裁，标题 / 预览 / 时间全挤在一起，尾部时间直接消失。
+    m_list->setWordWrap(true);
     m_list->setUniformItemSizes(true);
     m_list->setContextMenuPolicy(Qt::CustomContextMenu);
     layout->addWidget(m_list, 1);
@@ -703,14 +705,14 @@ void SessionListWidget::applySessions(const QJsonArray &sessions)
     rebuildMenu();
     // 搜索高亮：命中词在副行铺琥珀底色。关键词为空就卸掉 delegate，
     // 平常列表的绘制路径跟以前一模一样（不做无谓自绘开销）。
-    if (highlightKeyword.isEmpty()) {
+    // 列表项是两行文本（标题 + 副行），所以常规列表也得挂这个 delegate：
+    // 关键词为空时它不铺琥珀底色，只负责把 U+2028 还原成换行、把两行都画出来。
+    if (!m_searchDelegate || m_searchDelegateKeyword != highlightKeyword) {
+        m_list->setItemDelegate(nullptr);
         if (m_searchDelegate) {
-            m_list->setItemDelegate(nullptr);
             m_searchDelegate->deleteLater();
             m_searchDelegate = nullptr;
-            m_searchDelegateKeyword.clear();
         }
-    } else if (!m_searchDelegate || m_searchDelegateKeyword != highlightKeyword) {
         m_searchDelegate = new SearchHighlightDelegate(highlightKeyword, this);
         m_list->setItemDelegate(m_searchDelegate);
         m_searchDelegateKeyword = highlightKeyword;

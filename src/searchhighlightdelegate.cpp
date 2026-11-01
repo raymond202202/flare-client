@@ -16,6 +16,13 @@ void drawLine(QPainter *p, const QRect &rect, const QFont &font, const QString &
 {
     const QFontMetrics fm(font);
     p->setFont(font);
+    // keyword 为空时 indexOf("") 恒返回 0：下面的高亮循环会原地打转 200 次
+    // 而一个字都不画（非搜索态整行空白）。空关键词直接整段绘制。
+    if (keyword.isEmpty()) {
+        p->setPen(fg);
+        p->drawText(rect, Qt::AlignLeft | Qt::AlignVCenter, text);
+        return;
+    }
     int x = rect.left();
     QString rest = text;
     // 文本已在宿主侧按像素裁好，这里只兜底防死循环
@@ -70,10 +77,17 @@ void SearchHighlightDelegate::paint(QPainter *painter, const QStyleOptionViewIte
         std::fflush(stderr);
     }
 
-    const QString text = opt.text;
-    // 没有关键词，或者这一项压根不含关键词（时间戳副行、分组标题）→ 原样交给基类
-    if (m_keyword.isEmpty() || text.isEmpty()
-        || !text.contains(m_keyword, Qt::CaseInsensitive)) {
+    // Qt 把文本交给 delegate 之前会把 '\n' 规范化成 U+2028（行分隔符）：
+    // 直接 split('\n') 只得到一行，副行的时间被压进主行再被 elide 裁掉，
+    // 同一标题的两条会话便完全同形。这里先还原成真正的换行。
+    QString text = opt.text;
+    text.replace(QChar(0x2028), QLatin1Char('\n'));
+    text.replace(QChar(0x2029), QLatin1Char('\n'));
+
+    const bool hit = !m_keyword.isEmpty() && text.contains(m_keyword, Qt::CaseInsensitive);
+    // 单行项（分组标题等）交给基类；双行项必须自绘 —— 基类 paint 内部会重新
+    // initStyleOption，把 opt.text 又换回 U+2028 的单行串，副行照样丢失。
+    if (text.isEmpty() || !text.contains(QLatin1Char('\n'))) {
         QStyledItemDelegate::paint(painter, option, index);
         return;
     }
@@ -94,6 +108,8 @@ void SearchHighlightDelegate::paint(QPainter *painter, const QStyleOptionViewIte
     // 一层几乎看不出的米黄）。140 才能压出真正的琥珀块，同时不遮住底色文字。
     QColor hlBg = FlameTheme::yellow();
     hlBg.setAlpha(selected ? 165 : 140);
+    if (!hit)
+        hlBg.setAlpha(0);   // 常规列表没有命中词，别给副行铺底色
     const QColor hlFg = FlameTheme::dark();
 
     const QRect area = opt.rect.adjusted(6, 2, -6, -2);
