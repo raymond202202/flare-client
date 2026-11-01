@@ -18,7 +18,7 @@ namespace FlareTime {
 // 引擎时间串 → 本地时间。解析不了返回无效 QDateTime（调用方原样显示）。
 QDateTime parse(const QString &iso);
 
-// 列表条目：今天 HH:mm / 今年 MM-dd / 跨年 yyyy-MM-dd
+// 列表条目：今天 HH:mm / 今年 MM-dd HH:mm / 跨年 yyyy-MM-dd
 QString listStamp(const QString &iso, const QDateTime &now = QDateTime());
 
 // 分组标题：今天 / 昨天 / 最近 7 天 / 更早

@@ -101,8 +101,9 @@ private slots:
                  today.toString(QStringLiteral("HH:mm")));
 
         const QDateTime spring = QDateTime(QDate(2026, 3, 15), QTime(9, 0));
+        // 只到「日」会让同一天的两条不同会话在列表里长得一模一样（重影），必须带分钟
         QCOMPARE(FlareTime::listStamp(spring.toUTC().toString(Qt::ISODate), now),
-                 QStringLiteral("03-15"));
+                 QStringLiteral("03-15 09:00"));
 
         const QDateTime old = QDateTime(QDate(2025, 3, 15), QTime(9, 0));
         QCOMPARE(FlareTime::listStamp(old.toUTC().toString(Qt::ISODate), now),

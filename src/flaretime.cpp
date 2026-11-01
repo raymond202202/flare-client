@@ -62,7 +62,7 @@ QString FlareTime::listStamp(const QString &iso, const QDateTime &now)
     if (dt.date() == today)
         return dt.toString(QStringLiteral("HH:mm"));
     if (dt.date().year() == today.year())
-        return dt.toString(QStringLiteral("MM-dd"));
+        return dt.toString(QStringLiteral("MM-dd HH:mm"));
     return dt.toString(QStringLiteral("yyyy-MM-dd"));
 }
 

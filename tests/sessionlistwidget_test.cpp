@@ -365,7 +365,9 @@ void SessionListWidgetTest::shortStampKeepsYearAcrossYears()
              sameDay.toString(QStringLiteral("HH:mm")));
 
     const QDateTime thisYear = QDateTime(QDate(2026, 8, 13), QTime(9, 5));
-    QCOMPARE(SessionListWidget::shortStamp(utcIso(thisYear), now), QStringLiteral("08-13"));
+    // 今年内也要带分钟：同一天的两条不同会话只显示到「日」就会撞成一样的行（重影）
+    QCOMPARE(SessionListWidget::shortStamp(utcIso(thisYear), now),
+             QStringLiteral("08-13 09:05"));
 
     const QDateTime lastYear = QDateTime(QDate(2025, 3, 15), QTime(9, 5));
     QCOMPARE(SessionListWidget::shortStamp(utcIso(lastYear), now), QStringLiteral("2025-03-15"));

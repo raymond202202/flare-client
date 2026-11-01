@@ -667,7 +667,20 @@ void SessionListWidget::applySessions(const QJsonArray &sessions)
             item->setText(QStringLiteral("%1\n%2").arg(mainText, secondLine));
             item->setSizeHint(QSize(kItemTextWidth, 52));
         }
-        item->setToolTip(preview.isEmpty() ? mainText : preview);
+        // 侧栏只有 168px，副行塞不下「消息数」——把能区分同名会话的元信息全放 tooltip：
+        // 同名 + 同分钟的重影会话，悬停就能看出是哪条（消息数差 4 倍很直观）。
+        QString tip = preview.isEmpty() ? mainText : preview;
+        const int msgCount = s.value(QStringLiteral("messageCount")).toInt();
+        {
+            QStringList meta;
+            if (!stamp.isEmpty())
+                meta << stamp;
+            if (msgCount > 0)
+                meta << QStringLiteral("%1 条消息").arg(msgCount);
+            if (!meta.isEmpty())
+                tip += QStringLiteral("\n") + meta.join(QStringLiteral(" · "));
+        }
+        item->setToolTip(tip);
         item->setData(kRoleId, id);
         item->setData(kRoleTitle, mainText);
         item->setData(kRolePreview, preview);
