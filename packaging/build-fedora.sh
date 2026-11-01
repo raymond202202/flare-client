@@ -42,7 +42,9 @@ echo "==> 运行测试 (TDD)"
 # 无图形环境（CI、SSH、后台打包）也要能跑：显式用 offscreen 平台，
 # 否则 Qt 拿不到 DISPLAY 会 Subprocess aborted，看起来像测试全红。
 export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-offscreen}"
-ctest --test-dir build-fedora --output-on-failure
+# 这些用例要 grab() 视口像素、创建 QWidget：没有显示服务时 Qt 直接 abort。
+# 打包机/CI 上通常没有 DISPLAY，统一走 offscreen（不改测试行为）。
+QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-offscreen}" ctest --test-dir build-fedora --output-on-failure
 
 # 打包（可选：-p 参数触发 CPack RPM 打包）
 if [ "${1:-}" = "-p" ]; then

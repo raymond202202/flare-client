@@ -34,7 +34,8 @@ void SearchHighlightTest::highlightsKeyword()
     QListWidget list;
     list.resize(220, 60);
     list.setItemDelegate(new SearchHighlightDelegate(QStringLiteral("介绍你自己"), &list));
-    auto *item = new QListWidgetItem(QStringLiteral("用一句话介绍你自己"), &list);
+    // 真实会话项一定是两行（标题 + 副行）：单行文本会走基类渲染，不参与高亮
+    auto *item = new QListWidgetItem(QStringLiteral("用一句话介绍你自己\n10-30 14:36"), &list);
     item->setSizeHint(QSize(220, 52));
     list.show();
 

@@ -36,6 +36,8 @@ add_test(NAME markdownview COMMAND t_markdownview)
 add_executable(t_searchhighlight searchhighlight_test.cpp)
 target_link_libraries(t_searchhighlight PRIVATE Qt6::Test flare_client_core)
 add_test(NAME searchhighlight COMMAND t_searchhighlight)
+# 该用例要 grab() 视口像素做判据，没有显示服务时会直接 abort
+set_tests_properties(searchhighlight PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 add_executable(t_sessionlist sessionlistwidget_test.cpp)
 target_link_libraries(t_sessionlist PRIVATE Qt6::Test flare_client_core)
