@@ -10,6 +10,30 @@ Flare 是一个能自己动手做事的 AI 助手：你说话，它调工具干�
 
 ---
 
+## 最新版本
+
+**0.6.186**（2026-11-01）— 修复左侧会话列表的「重影」问题：同一天里两条不同的会话，因为时间只显示到「日」、标题又相同，看上去完全一样。
+
+- 每个会话项固定两行：第一行标题，第二行时间；
+- 时间精确到分钟：今天 `HH:mm`，今年 `MM-dd HH:mm`，跨年 `yyyy-MM-dd`；
+- 顺带修复搜索状态下切回普通列表时部分行整行空白的缺陷。
+
+Fedora x86_64 安装包（**当前临时下载通道**，见下方说明）：
+
+| 内容 | 地址 |
+|---|---|
+| `flare-client_0.6.186.rpm`（4.1 MB） | https://eqmdtenvlk7.feishu.cn/file/AbenbZeHnopx1wxIbjecAJF5nbb |
+| `SHA256SUMS.txt` | https://eqmdtenvlk7.feishu.cn/file/NLSrbMO5UotmwOxXJekcLlJ8nqd |
+| 安装与使用说明 | https://eqmdtenvlk7.feishu.cn/docx/AQfPdIR7GofCrcxCAx2cjb7tnKf |
+
+SHA256：`3855e80991d78a3d5a57a860523cd7406533262d39bc29370667eeb70d068bbd`
+
+> **分发说明**：源码、版本历史、变更记录以本仓库为准（主阵地）。项目目前没有自建下载服务器，二进制安装包**暂时**通过飞书云文档分发，后续会迁到自有站点；任何情况下都可以按「六、从源码构建」自行从源码打包。
+
+历史版本变更见 [CHANGELOG.md](CHANGELOG.md)。
+
+---
+
 ## 一、平台支持状态
 
 | 平台 | 壳 | 安装包 | 真机验证 |
