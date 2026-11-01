@@ -270,23 +270,9 @@ namespace FlareWin
                 if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("FLARE_GUI_SMOKE"))) return;
             }
 
-            // 取证时先选中第一条：选中态是最容易错的一处
-            // （Foreground 写成元素属性会被本地值优先级压过 DataTrigger，选中后字不变白），
-            // 不选中就永远拍不到，等于没验。
-            if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("FLARE_GUI_DEMO")))
-            {
-                Delay(3000, () =>
-                {
-                    if (SessionList.SelectedIndex >= 0) return;
-                    // 第 0 项现在是分组标题（IsEnabled=False 不可选），直接写 SelectedIndex=0
-                    // 会被 WPF 静默忽略 —— 又变成拍不到选中态，等于这轮取证白做。
-                    for (int i = 0; i < SessionList.Items.Count; i++)
-                    {
-                        var it = SessionList.Items[i] as SessionInfo;
-                        if (it != null && !it.IsHeader) { SessionList.SelectedIndex = i; break; }
-                    }
-                });
-            }
+            // 选中态不在启动时挂定时器：侧栏每次刷新都会 Clear + 重建集合，
+            // 3.0s 选中的项到 3.5s 拍照时可能已经被刷掉，于是截出来没有高亮。
+            // 统一挪到 Shot() 里，在渲染前一刻补选，见 EnsureDemoSelection()。
 
             // 启动 3.5s 后：01-main
             Delay(3500, () => Shot("01-main"));
@@ -335,6 +321,12 @@ namespace FlareWin
             try
             {
                 Directory.CreateDirectory(dir);
+
+                // 拍摄前一瞬补选中：选中态是侧栏最容易写错的一处
+                // （Foreground 写成元素属性会被本地值优先级压过 DataTrigger，选中后字不变白），
+                // 拍不到就等于这一轮没验。
+                EnsureDemoSelection();
+
                 var root = (FrameworkElement)Content;
                 root.UpdateLayout();
                 var w = (int)Math.Ceiling(root.ActualWidth);
@@ -352,6 +344,24 @@ namespace FlareWin
             {
                 LogShot("shot failed: " + ex.Message);
             }
+        }
+
+        /// <summary>
+        /// 取证专用：保证侧栏有一条真会话处于选中态。分组标题行是 IsEnabled=False，
+        /// 跳过它 —— 否则 SelectedIndex=0 落在标题行上会被 WPF 静默忽略。
+        /// </summary>
+        private void EnsureDemoSelection()
+        {
+            if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("FLARE_GUI_DEMO"))) return;
+            var cur = SessionList.SelectedItem as SessionInfo;
+            if (cur != null && !cur.IsHeader) return;
+            for (int i = 0; i < SessionList.Items.Count; i++)
+            {
+                var it = SessionList.Items[i] as SessionInfo;
+                if (it != null && !it.IsHeader) { SessionList.SelectedIndex = i; break; }
+            }
+            // 选中会联动标题栏，必须让这次变更落进布局再截
+            SessionList.UpdateLayout();
         }
 
         private static void LogShot(string s)
