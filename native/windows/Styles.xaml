@@ -120,14 +120,17 @@
                  （IsMouseOver 照常为真），不排掉就会在路标上冒出橙色区块。 -->
             <MultiDataTrigger>
               <MultiDataTrigger.Conditions>
-                <Condition Binding="{Binding IsHeader, RelativeSource={RelativeSource TemplatedParent}}" Value="False" />
+                <!-- IsHeader 在 DataContext（SessionInfo）上，不在 ListBoxItem 上：
+                     写成 RelativeSource=TemplatedParent 会绑到不存在的属性，条件永远不成立，
+                     于是悬停和选中两个触发器一起失效 —— 表现就是列表里怎么点都没有高亮。 -->
+                <Condition Binding="{Binding IsHeader}" Value="False" />
                 <Condition Binding="{Binding IsMouseOver, RelativeSource={RelativeSource TemplatedParent}}" Value="True" />
               </MultiDataTrigger.Conditions>
               <Setter TargetName="bd" Property="Background" Value="#ffedd0" />
             </MultiDataTrigger>
             <MultiDataTrigger>
               <MultiDataTrigger.Conditions>
-                <Condition Binding="{Binding IsHeader, RelativeSource={RelativeSource TemplatedParent}}" Value="False" />
+                <Condition Binding="{Binding IsHeader}" Value="False" />
                 <Condition Binding="{Binding IsSelected, RelativeSource={RelativeSource TemplatedParent}}" Value="True" />
               </MultiDataTrigger.Conditions>
               <Setter TargetName="bd" Property="Background" Value="#f97316" />
