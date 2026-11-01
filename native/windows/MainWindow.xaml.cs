@@ -362,6 +362,8 @@ namespace FlareWin
             }
             // 选中会联动标题栏，必须让这次变更落进布局再截
             SessionList.UpdateLayout();
+            var picked = SessionList.SelectedItem as SessionInfo;
+            LogShot("选中 idx=" + SessionList.SelectedIndex + " id=" + (picked == null ? "<null>" : picked.Id));
         }
 
         private static void LogShot(string s)

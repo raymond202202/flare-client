@@ -116,25 +116,19 @@
             <ContentPresenter />
           </Border>
           <ControlTemplate.Triggers>
-            <!-- 用 MultiDataTrigger 而不是 Trigger：标题行虽被禁用，鼠标仍会悬在上面
-                 （IsMouseOver 照常为真），不排掉就会在路标上冒出橙色区块。 -->
-            <MultiDataTrigger>
-              <MultiDataTrigger.Conditions>
-                <!-- IsHeader 在 DataContext（SessionInfo）上，不在 ListBoxItem 上：
-                     写成 RelativeSource=TemplatedParent 会绑到不存在的属性，条件永远不成立，
-                     于是悬停和选中两个触发器一起失效 —— 表现就是列表里怎么点都没有高亮。 -->
-                <Condition Binding="{Binding IsHeader}" Value="False" />
-                <Condition Binding="{Binding IsMouseOver, RelativeSource={RelativeSource TemplatedParent}}" Value="True" />
-              </MultiDataTrigger.Conditions>
+            <!-- 这里只能用列表项自身的 Trigger（IsMouseOver / IsSelected 都是 ListBoxItem 的
+                 依赖属性）。别改成 MultiDataTrigger 去附带一个 {Binding IsHeader} 条件来排除
+                 分组标题：条件里的 DataContext 绑定在模板触发器下解析不到，整组条件恒不成立，
+                 悬停和选中会一起哑掉，表现就是列表里怎么点都没有高亮。
+                 标题行改在 Style.Triggers 里设 IsHitTestVisible=False 挡掉，见下。 -->
+            <Trigger Property="IsMouseOver" Value="True">
               <Setter TargetName="bd" Property="Background" Value="#ffedd0" />
-            </MultiDataTrigger>
-            <MultiDataTrigger>
-              <MultiDataTrigger.Conditions>
-                <Condition Binding="{Binding IsHeader}" Value="False" />
-                <Condition Binding="{Binding IsSelected, RelativeSource={RelativeSource TemplatedParent}}" Value="True" />
-              </MultiDataTrigger.Conditions>
+            </Trigger>
+            <Trigger Property="IsSelected" Value="True">
               <Setter TargetName="bd" Property="Background" Value="#f97316" />
-            </MultiDataTrigger>
+              <!-- 白字不在这里设：标题/时间两段文字各有自己的 Style，
+                   它们的 DataTrigger 绑 AncestorType=ListBoxItem 的 IsSelected 直接变白。 -->
+            </Trigger>
           </ControlTemplate.Triggers>
         </ControlTemplate>
       </Setter.Value>
@@ -146,6 +140,9 @@
       <DataTrigger Binding="{Binding IsHeader}" Value="True">
         <Setter Property="IsEnabled" Value="False" />
         <Setter Property="Focusable" Value="False" />
+        <!-- 挡在鼠标命中层：禁用元素 IsMouseOver 仍为真，光靠 IsEnabled=False
+             标题行被划过仍会亮 hover 色。IsHitTestVisible=False 之后鼠标彻底无视它。 -->
+        <Setter Property="IsHitTestVisible" Value="False" />
         <Setter Property="Cursor" Value="Arrow" />
         <Setter Property="Padding" Value="8,9,6,3" />
       </DataTrigger>
