@@ -101,23 +101,26 @@
 
   <!-- ========== 侧栏会话项 ========== -->
   <Style x:Key="SideItem" TargetType="ListBoxItem">
-    <Setter Property="Padding" Value="10,8" />
+    <!-- 内距 / 圆角 / 悬停 / 选中四组值逐字对齐 Qt 侧 QSS（sessionlistwidget.cpp:217-219）：
+         item{padding:8px 6px;border-radius:6px;margin:1px}、item:hover{#ffedd0}、item:selected{#f97316;color:white}。
+         两平台同一套观感，改一端必须同步另一端。 -->
+    <Setter Property="Padding" Value="8,6" />
     <Setter Property="Margin" Value="0,1" />
     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
     <Setter Property="Cursor" Value="Hand" />
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="ListBoxItem">
-          <Border x:Name="bd" Background="Transparent" CornerRadius="8"
+          <Border x:Name="bd" Background="Transparent" CornerRadius="6"
                   Padding="{TemplateBinding Padding}">
             <ContentPresenter />
           </Border>
           <ControlTemplate.Triggers>
             <Trigger Property="IsMouseOver" Value="True">
-              <Setter TargetName="bd" Property="Background" Value="{x:Static local:Theme.BgSoft}" />
+              <Setter TargetName="bd" Property="Background" Value="#ffedd0" />
             </Trigger>
             <Trigger Property="IsSelected" Value="True">
-              <Setter TargetName="bd" Property="Background" Value="{x:Static local:Theme.BgAlt}" />
+              <Setter TargetName="bd" Property="Background" Value="#f97316" />
             </Trigger>
           </ControlTemplate.Triggers>
         </ControlTemplate>

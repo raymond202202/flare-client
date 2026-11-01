@@ -24,9 +24,13 @@
     <LangVersion>latest</LangVersion>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <Deterministic>true</Deterministic>
-    <Version>0.6.163</Version>
-    <FileVersion>0.6.163.0</FileVersion>
-    <AssemblyVersion>0.6.163.0</AssemblyVersion>
+    <!-- 版本号的唯一来源是仓库根 CMakeLists.txt 的 project(... VERSION x.y.z)。
+         CI 用 -p:Version= 从那里取值覆盖，这里只是本地直接 msbuild 时的兜底值。
+         别再让兜底值落后于 CMakeLists —— 0.6.163 挂了很久，本地编出来的 exe
+         属性里写着 0.6.163，而安装包叫 0.6.19x，等于两个假版本号。 -->
+    <Version>0.6.191</Version>
+    <FileVersion>0.6.191.0</FileVersion>
+    <AssemblyVersion>0.6.191.0</AssemblyVersion>
     <Product>Flare</Product>
     <Company>Flare</Company>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>

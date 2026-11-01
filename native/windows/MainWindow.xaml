@@ -82,24 +82,61 @@
 
     <!-- ===== 侧栏会话项 ===== -->
     <DataTemplate x:Key="SessionItem">
-      <StackPanel>
-        <TextBlock Text="{Binding Display}" TextTrimming="CharacterEllipsis"
+      <!-- 单行：标题（按可用宽度 elide）+ 右端时间列，两格独立。
+           0.6.191 的结论——时间必须与标题同色、且各占一格；
+           写成「标题末尾拼时间」的样式，文字一变长就会把时间顶出可视区。 -->
+      <Grid ToolTip="{Binding FullStamp}">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+
+        <!-- Foreground 必须写在 Style 里，不能写成 TextBlock 的属性：
+             本地值优先级高于 Style 触发器，写成属性后选中态永远变不成白字。 -->
+        <TextBlock Grid.Column="0" Text="{Binding Display}"
+                   TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"
                    FontSize="{x:Static local:Theme.FontList}"
-                   Foreground="{x:Static local:Theme.TextMain}" />
-        <TextBlock Text="{Binding Preview}" TextTrimming="CharacterEllipsis"
+                   VerticalAlignment="Center">
+          <TextBlock.Style>
+            <Style TargetType="TextBlock">
+              <Setter Property="Foreground" Value="{x:Static local:Theme.TextMain}" />
+              <Style.Triggers>
+                <DataTrigger Value="True"
+                             Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}">
+                  <Setter Property="Foreground" Value="White" />
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </TextBlock.Style>
+        </TextBlock>
+
+        <TextBlock Grid.Column="1" Text="{Binding Stamp}"
+                   TextWrapping="NoWrap" Margin="10,0,0,0"
                    FontSize="{x:Static local:Theme.FontFootnote}"
-                   Foreground="{x:Static local:Theme.TextMuted}"
-                   Margin="0,2,0,0"
-                   Visibility="{Binding Preview, Converter={StaticResource EmptyToVis}, ConverterParameter=invert}" />
-      </StackPanel>
+                   VerticalAlignment="Center">
+          <TextBlock.Style>
+            <Style TargetType="TextBlock">
+              <Setter Property="Foreground" Value="{x:Static local:Theme.TextMain}" />
+              <Style.Triggers>
+                <DataTrigger Value="True"
+                             Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}">
+                  <Setter Property="Foreground" Value="White" />
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </TextBlock.Style>
+        </TextBlock>
+      </Grid>
     </DataTemplate>
 
   </Window.Resources>
 
   <Grid>
+    <!-- 侧栏 360 / 主区自适应，中间可拖：对齐 Qt 侧 splitter->setSizes({360,664})、侧栏最小宽 300。
+         252 是 Windows 首版的旧值，比样板窄 108px，同一批标题在 Windows 上会多截一截。 -->
     <Grid.ColumnDefinitions>
-      <ColumnDefinition Width="252" />
-      <ColumnDefinition Width="*" />
+      <ColumnDefinition Width="360" MinWidth="300" />
+      <ColumnDefinition Width="*" MinWidth="420" />
     </Grid.ColumnDefinitions>
 
     <!-- ============ 侧栏 ============ -->
@@ -153,6 +190,13 @@
         </StackPanel>
       </Grid>
     </Border>
+
+    <!-- 可拖分隔条：贴在侧栏右边缘，透明不挡观感，只接管指针。
+         与 Qt 侧 QSplitter 同义——用户能把侧栏拖宽看长标题。 -->
+    <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Left"
+                  VerticalAlignment="Stretch" Background="Transparent"
+                  ResizeBehavior="PreviousAndNext" ResizeDirection="Columns"
+                  Cursor="SizeWE" />
 
     <!-- ============ 主区 ============ -->
     <Grid Grid.Column="1">

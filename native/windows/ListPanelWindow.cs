@@ -149,7 +149,7 @@ namespace FlareWin
                 };
                 var sub = new TextBlock
                 {
-                    Text = (string.IsNullOrEmpty(s.Preview) ? "" : s.Preview + "  ·  ") + s.UpdatedAt,
+                    Text = (string.IsNullOrEmpty(s.Preview) ? "" : s.Preview + "  ·  ") + s.Stamp,
                     FontSize = Theme.FontFootnote,
                     Foreground = Theme.TextMuted,
                     Margin = new Thickness(0, 4, 0, 0),
