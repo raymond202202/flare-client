@@ -1,7 +1,9 @@
 #include "searchhighlightdelegate.h"
 #include "flametheme.h"
 
+#include <QApplication>
 #include <QPainter>
+#include <QStyle>
 #include <cstdio>
 #include <cstdlib>
 #include <QStyleOptionViewItem>
@@ -98,10 +100,17 @@ void SearchHighlightDelegate::paint(QPainter *painter, const QStyleOptionViewIte
         return;
     }
 
-    // 先让基类把背景、悬停、选中、焦点框都画好，但别让它画文字：
-    // 清空 opt.text 后自己描一遍，才能逐字上底色。
-    opt.text.clear();
-    QStyledItemDelegate::paint(painter, opt, index);
+    // 【重影真因】QStyledItemDelegate::paint 内部会再调一次 initStyleOption(opt, index)，
+    // 把 opt.text 从 Qt::DisplayRole 重新填回来 —— 上面清空 opt.text 根本拦不住它。
+    // 结果同一个标题先被基类整条画一遍、又被下面按 elide 后的宽度画一遍，两遍长度不同，
+    // 右端多出来的半截压在时间列上，人眼看到的就是「重影」。
+    // 背景改用 style 的 CE_ItemViewItem 原语：它直接吃传入的 opt（不会重新 init），
+    // text 已清空，只画底色/选中/悬停/焦点框，一个字都不碰。
+    QStyleOptionViewItem bgOpt(option);
+    initStyleOption(&bgOpt, index);
+    bgOpt.text.clear();
+    if (QStyle *style = bgOpt.widget ? bgOpt.widget->style() : QApplication::style())
+        style->drawControl(QStyle::CE_ItemViewItem, &bgOpt, painter, bgOpt.widget);
 
     const bool selected = opt.state & QStyle::State_Selected;
     const QColor mainFg = selected ? opt.palette.color(QPalette::HighlightedText)
