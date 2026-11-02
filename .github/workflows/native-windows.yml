@@ -132,6 +132,10 @@ jobs:
 
       # runner 是 Windows Server，字体比桌面版 Windows 精简。emoji 画不出来
       # 到底是「字体文件压根不在」还是「字体在但 WPF 没选中」，得先有事实。
+      #
+      # 注意：这里必须 shell: powershell（5.1，才有 WPF），而 5.1 读无 BOM 的
+      # UTF-8 脚本会按 ANSI(GBK) 解码 —— 中文一旦出现在脚本里就是 ParserError。
+      # 所以本步所有输出标签一律 ASCII，别图省事写中文。
       - name: 字体诊断
         shell: powershell
         run: |
@@ -140,15 +144,16 @@ jobs:
           "msyh.ttc     : $(Test-Path C:\Windows\Fonts\msyh.ttc)"
           Add-Type -AssemblyName PresentationCore
           $fams = [System.Windows.Media.Fonts]::SystemFontFamilies | ForEach-Object { $_.Source }
-          "字体族总数 : $($fams.Count)"
-          "--- 相关字体族 ---"
+          "font families total : $($fams.Count)"
+          "--- matched families ---"
           $fams | Where-Object { $_ -match 'Emoji|Symbol|YaHei|Segoe' }
-          "--- composite 解析测试 ---"
+          "--- composite resolution ---"
           $ff = New-Object System.Windows.Media.FontFamily("Segoe UI Emoji, Segoe UI, Microsoft YaHei UI")
           "FamilyNames : $($ff.FamilyNames.Values -join '|')"
           $tf = New-Object System.Windows.Media.Typeface($ff, [System.Windows.FontStyles]::Normal, [System.Windows.FontWeights]::Normal, [System.Windows.FontStretches]::Normal)
+          $gt = $null
           "TryGetGlyphTypeface : $($tf.TryGetGlyphTypeface([ref]$gt))"
-          if ($gt) { "解析到字体文件 : $($gt.FontUri)" }
+          if ($gt) { "resolved font file : $($gt.FontUri)" }
 
       # 无人值守 GUI 取证：跑真实的 exe，把「只能看像素」的东西落成图片 ——
       # 菜单 emoji 到底画没画出来、置顶行的 📌 有没有缺字形、搜索高亮是不是琥珀色，
