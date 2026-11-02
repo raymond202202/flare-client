@@ -34,7 +34,10 @@ fi
 ARCH="$(uname -m)"
 TARGET="$ARCH-apple-macos13.0"
 echo "==> 编译 Swift 源码（target=${TARGET}）"
-swiftc -O -parse-as-library -target "$TARGET" \
+# -swift-version 5：本机 Xcode 默认 Swift 5 语言模式，而 GitHub macos-14 runner 的
+# Xcode 更新，严格并发检查会把 weak self 捕获（Engine.swift:101/107/116）升级成 error。
+# 显式锁定 5，让本机与 CI 的编译口径一致；将来整体迁移 Swift 6 并发模型时再放开。
+swiftc -O -parse-as-library -swift-version 5 -target "$TARGET" \
     -o "$BUNDLE/Contents/MacOS/$APP_NAME" \
     Sources/*.swift
 

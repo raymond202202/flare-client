@@ -17,6 +17,11 @@ Unicode true
 !ifndef VERSION
   !define VERSION "0.0.0"
 !endif
+; VIProductVersion 只认 3~4 段纯数字，而 VERSION 可能是 0.0.0-dev.<sha>。
+; 数字版本由 CI 单独以 -DNUMVERSION 传入；本地手工打包时回落到 VERSION。
+!ifndef NUMVERSION
+  !define NUMVERSION "${VERSION}"
+!endif
 !ifndef SRCDIR
   !define SRCDIR "."
 !endif
@@ -36,7 +41,7 @@ RequestExecutionLevel user
 SetCompressor /SOLID lzma
 SetCompressorDictSize 64
 
-VIProductVersion "${VERSION}.0"
+VIProductVersion "${NUMVERSION}.0"
 VIAddVersionKey "ProductName" "${APPNAME}"
 VIAddVersionKey "CompanyName" "${COMPANY}"
 VIAddVersionKey "FileDescription" "Flare 安装程序"

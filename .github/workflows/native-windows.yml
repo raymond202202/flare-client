@@ -38,8 +38,17 @@ jobs:
           } else {
             $v = "0.0.0-dev." + "${{ github.sha }}".Substring(0,7)
           }
+          # AssemblyVersion / FileVersion / NSIS VIProductVersion 只认纯数字段，
+          # 传 0.0.0-dev.xxxx 会撞 MC1005 Invalid AssemblyVersion。显示版本留完整串，
+          # 数字版本单独给：正式 tag 取 x.y.z，dev 构建用 run number 保证单调递增。
+          if ($v -match '^(\d+)\.(\d+)\.(\d+)$' -or $v -match '^(\d+)\.(\d+)\.(\d+)[-.+]') {
+            $num = "$($matches[1]).$($matches[2]).$($matches[3])"
+          } else {
+            $num = "0.0.$env:GITHUB_RUN_NUMBER"
+          }
           "version=$v" >> $env:GITHUB_OUTPUT
-          Write-Host "VERSION=$v"
+          "numver=$num" >> $env:GITHUB_OUTPUT
+          Write-Host "VERSION=$v NUMVER=$num"
 
       # ---------- 引擎（Go / windows amd64，CGO 关闭） ----------
       - name: 取引擎源码
@@ -91,8 +100,8 @@ jobs:
             /p:Configuration=Release `
             /p:Platform=x64 `
             /p:Version=${{ steps.v.outputs.version }} `
-            /p:FileVersion=${{ steps.v.outputs.version }}.0 `
-            /p:AssemblyVersion=${{ steps.v.outputs.version }}.0 `
+            /p:FileVersion=${{ steps.v.outputs.numver }}.0 `
+            /p:AssemblyVersion=${{ steps.v.outputs.numver }}.0 `
             /v:minimal
           if ($LASTEXITCODE -ne 0) { throw "WPF 编译失败" }
 
@@ -133,6 +142,7 @@ jobs:
           Push-Location native/windows
           & $mk -INPUTCHARSET UTF8 `
             "-DVERSION=${{ steps.v.outputs.version }}" `
+            "-DNUMVERSION=${{ steps.v.outputs.numver }}" `
             "-DSRCDIR=dist\pkg" `
             "-DOUTDIR=dist" `
             installer.nsi
