@@ -10,6 +10,7 @@ on:
         description: "版本号（留空=取 tag 或 0.0.0-dev.<sha>）"
         required: false
   push:
+    branches: [master]
     tags: ["v*"]
     paths:
       - "native/macos/**"
