@@ -98,30 +98,60 @@
              Qt appendSectionHeader，扫读时能一眼和会话名分开。
              与会话行互斥显示：同一份模板两套内容，省掉 TemplateSelector 和
              两套 ItemContainerStyle 带来的选中/虚拟化分叉。 -->
-        <!-- FontFamily 必须显式指向 Theme.FontEmojiFamily：分组标题里会出现「📌 置顶」，
-             而 Window 级的 Segoe UI 不含 emoji 字形、WPF 也不会自动链路到
-             Segoe UI Emoji，结果就是 📌 只占宽度不画字形（看着像凭空缺个图标）。 -->
-        <TextBlock x:Name="SectionLine" Text="{Binding HeaderText}" Visibility="Collapsed"
-                   FontSize="{x:Static local:Theme.FontSection}" FontWeight="Bold"
-                   FontFamily="{x:Static local:Theme.FontEmojiFamily}"
-                   Foreground="{x:Static local:Theme.TextSection}"
-                   VerticalAlignment="Bottom" Margin="2,0,0,0" />
+        <!-- 【emoji → MDL2 图标迁移 · 2026-11-02】
+             分组标题原本写「📌 置顶」，靠 emoji 表达图钉。CI 实测结论：WPF（.NET Framework）
+             不支持 Segoe UI Emoji 的 COLR/CPAL 彩色合成，📌 只吃 advance width 不画字形，
+             怎么加字体回退链都没用。所以图标一律改用 Segoe MDL2 Assets 单色轮廓字体，
+             文字与图标分成两个 TextBlock（不同字体族，不能混排在一个 TextBlock 里）。
+             图标是否显示由 IsPinnedHeader 控制 —— 「今天/昨天/更早」这些组不带图钉。 -->
+        <StackPanel x:Name="SectionLine" Orientation="Horizontal" Visibility="Collapsed"
+                    VerticalAlignment="Bottom" Margin="2,0,0,0">
+          <TextBlock Text="&#xE718;" FontFamily="{x:Static local:Theme.FontIconFamily}"
+                     FontSize="{x:Static local:Theme.FontSection}"
+                     Foreground="{x:Static local:Theme.TextSection}"
+                     VerticalAlignment="Bottom" Margin="0,0,5,1"
+                     Visibility="{Binding IsPinnedHeader, Converter={StaticResource BoolToVis}}" />
+          <TextBlock Text="{Binding HeaderText}"
+                     FontSize="{x:Static local:Theme.FontSection}" FontWeight="Bold"
+                     Foreground="{x:Static local:Theme.TextSection}"
+                     VerticalAlignment="Bottom" />
+        </StackPanel>
 
         <!-- 单行：标题（按可用宽度 elide）+ 右端时间列，两格独立。
              0.6.191 的结论——时间必须与标题同色、且各占一格；
              写成「标题末尾拼时间」的样式，文字一变长就会把时间顶出可视区。 -->
         <Grid x:Name="RowLine" ToolTip="{Binding FullStamp}">
           <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
             <ColumnDefinition Width="*" />
             <ColumnDefinition Width="Auto" />
           </Grid.ColumnDefinitions>
 
+          <!-- 图钉列：置顶项才占位，未置顶时 Collapsed 不留空白（与 Qt 里「有 📌 才有前缀」一致）。
+               与标题同色同高，选中态跟着变白 —— 所以 Foreground 同样写在 Style 里。 -->
+          <TextBlock Grid.Column="0" Text="&#xE718;"
+                     FontFamily="{x:Static local:Theme.FontIconFamily}"
+                     FontSize="{x:Static local:Theme.FontList}"
+                     Margin="0,0,4,0" VerticalAlignment="Center"
+                     Visibility="{Binding Pinned, Converter={StaticResource BoolToVis}}">
+            <TextBlock.Style>
+              <Style TargetType="TextBlock">
+                <Setter Property="Foreground" Value="{x:Static local:Theme.TextMain}" />
+                <Style.Triggers>
+                  <DataTrigger Value="True"
+                               Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}">
+                    <Setter Property="Foreground" Value="White" />
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </TextBlock.Style>
+          </TextBlock>
+
           <!-- Foreground 必须写在 Style 里，不能写成 TextBlock 的属性：
                本地值优先级高于 Style 触发器，写成属性后选中态永远变不成白字。 -->
-          <TextBlock Grid.Column="0" Text="{Binding ListText}"
+          <TextBlock Grid.Column="1" Text="{Binding ListText}"
                      TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"
                      FontSize="{x:Static local:Theme.FontList}"
-                     FontFamily="{x:Static local:Theme.FontEmojiFamily}"
                      VerticalAlignment="Center">
             <TextBlock.Style>
               <Style TargetType="TextBlock">
@@ -136,7 +166,7 @@
             </TextBlock.Style>
           </TextBlock>
 
-          <TextBlock Grid.Column="1" Text="{Binding Stamp}"
+          <TextBlock Grid.Column="2" Text="{Binding Stamp}"
                      TextWrapping="NoWrap" Margin="10,0,0,0"
                      FontSize="{x:Static local:Theme.FontFootnote}"
                      VerticalAlignment="Center">
@@ -224,14 +254,21 @@
             <TextBox x:Name="SearchBox" BorderThickness="0" Background="Transparent"
                      FontSize="{x:Static local:Theme.FontList}"
                      Foreground="{x:Static local:Theme.TextSoft}"
-                     Padding="8,6" VerticalContentAlignment="Center"
+                     Padding="28,6,8,6" VerticalContentAlignment="Center"
                      TextChanged="OnSearchTextChanged"
                      PreviewKeyDown="OnSearchKeyDown" />
           </Border>
-          <TextBlock x:Name="SearchPlaceholder" Text="🔍 搜索会话…" IsHitTestVisible="False"
+          <!-- 放大镜同样走 MDL2：原占位符 «🔍 搜索会话…» 里的 🔍 在 WPF 上是空白。
+               拆成独立图标 + 独立文字，输入后图标仍在（占位文字由 SearchPlaceholder 单独隐藏），
+               TextBox 左 padding 让出 28px 给它。 -->
+          <TextBlock Text="&#xE721;" FontFamily="{x:Static local:Theme.FontIconFamily}"
                      FontSize="{x:Static local:Theme.FontList}"
                      Foreground="{x:Static local:Theme.TextFaint}"
-                     Margin="10,0,0,0" VerticalAlignment="Center" />
+                     Margin="10,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False" />
+          <TextBlock x:Name="SearchPlaceholder" Text="搜索会话…" IsHitTestVisible="False"
+                     FontSize="{x:Static local:Theme.FontList}"
+                     Foreground="{x:Static local:Theme.TextFaint}"
+                     Margin="28,0,0,0" VerticalAlignment="Center" />
         </Grid>
 
         <!-- 会话列表 -->
@@ -370,10 +407,9 @@
             <StackPanel Grid.Column="0" Orientation="Horizontal">
               <Border x:Name="StatusDot" Width="7" Height="7" CornerRadius="4"
                       Background="{x:Static local:Theme.TextFaint}" VerticalAlignment="Center" />
-              <!-- 状态栏会写「已移入回收站，可在「🗑️ 回收站」里恢复」，同样要 emoji 回退链。 -->
+              <!-- 状态栏文本已去 emoji（「可在「回收站」里恢复」），所以这里不再需要 emoji 回退链。 -->
               <TextBlock x:Name="StatusLabel" Text="未启动" Margin="6,0,0,0"
                          FontSize="{x:Static local:Theme.FontFootnote}"
-                         FontFamily="{x:Static local:Theme.FontEmojiFamily}"
                          Foreground="{x:Static local:Theme.TextMuted}" VerticalAlignment="Center" />
             </StackPanel>
             <TextBlock Grid.Column="2" x:Name="RightStatus" Text=""

@@ -704,7 +704,7 @@ namespace FlareWin
                 case "confirm_result":
                 {
                     var allow = obj["allow"] != null && (bool)obj["allow"];
-                    AppendSystem(allow ? "✅ 已放行：" + ((string)obj["confirmId"] ?? "") : "⛔ 已拒绝本次工具调用");
+                    AppendSystem(allow ? "已放行：" + ((string)obj["confirmId"] ?? "") : "已拒绝本次工具调用");
                     break;
                 }
 
@@ -728,7 +728,7 @@ namespace FlareWin
                     var msg = (string)obj["message"] ?? "引擎返回未知错误";
                     LastError = msg;
                     StatusText = "错误";
-                    AppendSystem("⚠️ " + msg);
+                    AppendSystem("注意：" + msg);
                     break;
                 }
 
@@ -751,7 +751,7 @@ namespace FlareWin
                     }
                     else if (isArchived)
                     {
-                        StatusText = "已移入回收站，可在「🗑️ 回收站」里恢复";
+                        StatusText = "已移入回收站，可在「回收站」里恢复";
                         // 归档掉的正好是打开着的会话：留着主区继续显示一个「已进回收站」的
                         // 对话会让人以为还能接着聊，直接让空态接管
                         if (onCurrent) { SessionID = "default"; Blocks.Clear(); }
@@ -1000,10 +1000,14 @@ namespace FlareWin
             {
                 if (group)
                 {
-                    var sec = s.Pinned ? "📌 置顶" : SessionInfo.SectionOf(s.UpdatedLocal);
+                    var sec = s.Pinned ? "置顶" : SessionInfo.SectionOf(s.UpdatedLocal);
                     if (sec != cur)
                     {
-                        target.Add(new SessionInfo { Id = "", IsHeader = true, HeaderText = sec, Title = sec });
+                        target.Add(new SessionInfo
+                        {
+                            Id = "", IsHeader = true, HeaderText = sec, Title = sec,
+                            IsPinnedHeader = s.Pinned
+                        });
                         cur = sec;
                     }
                 }

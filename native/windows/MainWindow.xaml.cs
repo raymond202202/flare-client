@@ -321,6 +321,32 @@ namespace FlareWin
         /// 静态写出来是七八个互斥触发器，改一处要翻三遍，而且第一次弹菜单时
         /// 绑定还没走完一轮，容易闪一下旧文案。现场造菜单就是几步 new。
         /// </summary>
+        /// <summary>
+        /// 菜单项统一排版：MDL2 图标 + 中文文案。
+        /// 不能只丢一个字符串给 Header —— WPF 画不出 emoji（.NET Framework 无 COLR 支持），
+        /// 📌✏️📦 这些在菜单里会变成左侧一块空白，看着像缩进错位。
+        /// 图标 Foreground 故意不设：让它继承 MenuItem 的 TextElement.Foreground，
+        /// 禁用态 WPF 自动灰化、亮态自动跟主题色，不用手写两套。
+        /// </summary>
+        private static object MenuHeader(string glyph, string text)
+        {
+            var sp = new StackPanel { Orientation = Orientation.Horizontal };
+            sp.Children.Add(new TextBlock
+            {
+                Text = glyph,
+                FontFamily = Theme.FontIconFamily,
+                FontSize = Theme.FontList,
+                Margin = new Thickness(0, 0, 8, 0),
+                VerticalAlignment = VerticalAlignment.Center
+            });
+            sp.Children.Add(new TextBlock
+            {
+                Text = text,
+                VerticalAlignment = VerticalAlignment.Center
+            });
+            return sp;
+        }
+
         private void OnSessionMenuOpened(object sender, RoutedEventArgs e)
         {
             var cm = sender as ContextMenu;
@@ -350,12 +376,12 @@ namespace FlareWin
 
             // 逐项对齐 Qt 0.6.191 sessionlistwidget.cpp::rebuildMenu()：
             // 文案、顺序、分隔位、以及「归档箱里再删 = 彻底删除」这条都照搬。
-            var miPin = new MenuItem { Header = pinned ? "📌 取消置顶" : "📌 置顶会话" };
+            var miPin = new MenuItem { Header = pinned ? MenuHeader(Theme.Glyph.Unpin, "取消置顶") : MenuHeader(Theme.Glyph.Pin, "置顶会话") };
             miPin.IsEnabled = !isDemo;
             miPin.Click += (o, ev) => _engine.TogglePin(s.Id);
             cm.Items.Add(miPin);
 
-            var miRename = new MenuItem { Header = "✏️ 重命名会话", InputGestureText = "F2" };
+            var miRename = new MenuItem { Header = MenuHeader(Theme.Glyph.Edit, "重命名会话"), InputGestureText = "F2" };
             miRename.IsEnabled = !isDemo;
             miRename.Click += (o, ev) => RenameSession(s);
             cm.Items.Add(miRename);
@@ -364,12 +390,12 @@ namespace FlareWin
 
             if (_engine.ShowingArchived)
             {
-                var miRestore = new MenuItem { Header = "↩️ 恢复到最近会话" };
+                var miRestore = new MenuItem { Header = MenuHeader(Theme.Glyph.Undo, "恢复到最近会话") };
                 miRestore.IsEnabled = !isDemo;
                 miRestore.Click += (o, ev) => _engine.RestoreSession(s.Id);
                 cm.Items.Add(miRestore);
 
-                var miPurge = new MenuItem { Header = "❌ 彻底删除（不可恢复）" };
+                var miPurge = new MenuItem { Header = MenuHeader(Theme.Glyph.Cancel, "彻底删除（不可恢复）") };
                 miPurge.IsEnabled = !isDemo;
                 miPurge.Click += (o, ev) =>
                 {
@@ -381,13 +407,13 @@ namespace FlareWin
             }
             else
             {
-                var miArchive = new MenuItem { Header = "📦 归档到归档箱" };
+                var miArchive = new MenuItem { Header = MenuHeader(Theme.Glyph.Package, "归档到归档箱") };
                 miArchive.IsEnabled = !isDemo;
                 miArchive.Click += (o, ev) => _engine.EndSession(s.Id);
                 cm.Items.Add(miArchive);
             }
 
-            var miClear = new MenuItem { Header = "🧹 清空会话消息" };
+            var miClear = new MenuItem { Header = MenuHeader(Theme.Glyph.Delete, "清空会话消息") };
             miClear.IsEnabled = !isDemo;
             miClear.Click += (o, ev) => ClearSession(s);
             cm.Items.Add(miClear);
@@ -397,7 +423,7 @@ namespace FlareWin
                 // Qt 里 archiveCurrent 与 deleteCurrent 落到同一条 end_session（都是软删），
                 // 保留两项是因为「归档」和「丢进回收站」在中文里不是一回事。
                 // EndSession 内部先 Unpin，和 Qt deleteCurrent 的 removeAll 一致。
-                var miTrash = new MenuItem { Header = "🗑️ 移入回收站" };
+                var miTrash = new MenuItem { Header = MenuHeader(Theme.Glyph.Delete, "移入回收站") };
                 miTrash.IsEnabled = !isDemo;
                 miTrash.Click += (o, ev) => _engine.EndSession(s.Id);
                 cm.Items.Add(miTrash);
@@ -407,7 +433,7 @@ namespace FlareWin
 
             var miToggle = new MenuItem
             {
-                Header = _engine.ShowingArchived ? "📂 返回最近会话" : "🗑️ 打开回收站"
+                Header = _engine.ShowingArchived ? MenuHeader(Theme.Glyph.Back, "返回最近会话") : MenuHeader(Theme.Glyph.Delete, "打开回收站")
             };
             miToggle.Click += (o, ev) =>
             {

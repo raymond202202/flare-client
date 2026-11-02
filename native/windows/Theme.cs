@@ -129,12 +129,14 @@ namespace FlareWin
         public const string FontUi = "Segoe UI";
         public const string FontMono = "Consolas";
 
-        // WPF 的 Segoe UI 不含 emoji 字形，系统 font linking 也不会自动链到
-        // Segoe UI Emoji —— 结果就是 📌✏️📦 这些字符只占宽度、不画字形，
-        // 菜单上看着像「缩进多了一块，图标凭空没了」。凡是含 emoji 的文本
-        // 都得显式走这条回退链：先问 Segoe UI Emoji 要字形，中文再回退到雅黑。
-        // 注意 WPF 只认 COLR 之外的轮廓，emoji 出来是单色（跟随 Foreground），
-        // 不会像 Qt 在 Linux 上那样是彩色 —— 这是平台限制，不是样式没写对。
+        // 【实测结论 · 2026-11-02】下面这条回退链在 Windows 上救不了 emoji，别再指望它：
+        // CI 字体诊断已证实 seguiemj.ttf 在、SystemFontFamilies 里有 Segoe UI Emoji、
+        // 复合 FontFamily 也解析到了 SEGUIEMJ.TTF —— 但 📌✏️📦 在 WPF 里依然是
+        // 「advance width 被压到近似 0、一个字形像素都不画」。根因是 Segoe UI Emoji
+        // 的基字形靠 COLR/CPAL 彩色层合成，而 .NET Framework 的 WPF 不认 COLR，
+        // 轮廓表里那层是空的。这不是字体没选中，是渲染栈能力边界。
+        // 结论：UI 里凡是「图标」一律走 Theme.FontIcon（Segoe MDL2 Assets，单色轮廓
+        // 字体，WPF 完美支持），不要用 emoji 当图标。FontEmoji 仅作历史保留。
         public const string FontEmoji = "Segoe UI Emoji, Segoe UI, Microsoft YaHei UI";
 
         // 同一个回退链的强类型版本。XAML 里给 TextBlock 直接属性赋值必须用它：
@@ -142,5 +144,31 @@ namespace FlareWin
         // InvalidCastException（'System.String' → 'FontFamily'），整个模板测量炸掉。
         // Setter.Value 那条路能容忍 string，直接属性赋值不行 —— 别混用。
         public static readonly FontFamily FontEmojiFamily = new FontFamily(FontEmoji);
+
+        // UI 图标字体：Segoe MDL2 Assets 是 Windows 10 起系统自带的**单色轮廓**图标字体，
+        // 纯 GDI 轮廓表、没有 COLR 合成层，WPF 能稳定画出来并跟随 Foreground 变色。
+        // 与 Qt 侧用彩色 emoji 字形不逐像素一致，但图标语义、位置、顺序完全对齐样板；
+        // 在 WPF 上这是「看得见」和「看不见」的区别，取舍毫不犹豫。
+        public const string FontIcon = "Segoe MDL2 Assets";
+        public static readonly FontFamily FontIconFamily = new FontFamily(FontIcon);
+
+        /// <summary>
+        /// Segoe MDL2 Assets 码位表。集中在这里，免得各处手写 \uXXXX 后对不上号。
+        /// 查表来源：learn.microsoft.com/windows/apps/design/style/segoe-ui-symbol-font
+        /// </summary>
+        public static class Glyph
+        {
+            public const string Pin = "\uE718";        // Pin
+            public const string Unpin = "\uE77A";      // Unpin
+            public const string Edit = "\uE70F";       // Edit
+            public const string Undo = "\uE7A7";       // Undo
+            public const string Delete = "\uE74D";     // Delete（回收站 / 清空 通用）
+            public const string Package = "\uE7B8";    // Package（归档）
+            public const string Search = "\uE721";     // Search
+            public const string Back = "\uE72B";       // Back
+            public const string Warning = "\uE7BA";    // Warning
+            public const string CheckMark = "\uE73E";  // CheckMark
+            public const string Cancel = "\uE711";     // Cancel（彻底删除）
+        }
     }
 }

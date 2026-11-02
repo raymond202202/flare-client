@@ -114,14 +114,22 @@ namespace FlareWin
         public bool Pinned { get; set; }
 
         /// <summary>
-        /// 侧栏列表项实际绘制的文本：置顶项前面缀 📌。
-        /// 与 Display 分开是有意的 —— 顶部标题栏（ChatTitle）用 Display 的纯文本，
-        /// 那里多一颗图钉只是噪音；Qt sessionlistwidget.cpp:655 也只 prepend 到 mainText。
+        /// 侧栏列表项实际绘制的文本。
+        /// 0.6.191 之后这里**不再**前缀 📌：WPF 画不出彩色 emoji（见 Theme.FontEmoji 注释），
+        /// 图钉改由模板里独立的 MDL2 图标列渲染，绑 Pinned。
+        /// 与 Display 分开保留是有意的 —— 顶部标题栏（ChatTitle）用 Display 纯文本。
         /// </summary>
         public string ListText
         {
-            get { return Pinned ? "📌 " + Display : Display; }
+            get { return Display; }
         }
+
+        /// <summary>
+        /// 该分组标题是不是「置顶」组 —— 决定 SectionLine 前面画不画图钉。
+        /// Qt 侧是靠标题文字里带 📌 天然区分，这里文字必须干净（图标与文字不同字体），
+        /// 所以显式带一个标志位。
+        /// </summary>
+        public bool IsPinnedHeader { get; set; }
 
         /// <summary>本地时间的更新时间，分组用。引擎给 UTC，不转本地会把夜里 8 点后的会话归到第二天。</summary>
         public DateTime? UpdatedLocal { get { return ParseUpdated(); } }
