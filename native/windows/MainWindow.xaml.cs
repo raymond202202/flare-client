@@ -782,7 +782,17 @@ namespace FlareWin
             if (string.IsNullOrEmpty(p)) return;
             try
             {
-                File.AppendAllText(p, DateTime.Now.ToString("HH:mm:ss.fff") + " " + s + "\n");
+                // 取证日志和引擎日志共用同一个文件：Flare 自己把 spawn 行与
+                // stdin/stdout 转发（== / >> / <<）也写进 FLARE_GUI_LOG，那条流
+                // 一直握着写句柄。File.AppendAllText 默认 FileShare.Read，
+                // 打开时直接 IOException，被 catch 静默吞掉 —— 表现为「明明
+                // 拍了图，日志里却一条 shot 行都没有」，真机上排查过一轮。
+                // 所以这里显式 FileShare.ReadWrite，允许与引擎日志流共存。
+                using (var fs = new FileStream(p, FileMode.Append, FileAccess.Write, FileShare.ReadWrite))
+                using (var sw = new StreamWriter(fs))
+                {
+                    sw.Write(DateTime.Now.ToString("HH:mm:ss.fff") + " " + s + "\n");
+                }
             }
             catch
             {
