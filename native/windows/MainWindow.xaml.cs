@@ -521,7 +521,7 @@ namespace FlareWin
             var searchKw = Environment.GetEnvironmentVariable("FLARE_GUI_SEARCH");
             if (!string.IsNullOrEmpty(searchKw))
             {
-                Delay(4200, () =>
+                Delay(5400, () =>
                 {
                     LogShot("search \"" + searchKw + "\"");
                     SearchBox.Text = searchKw;   // → TextChanged → 250ms 防抖 → search_sessions
@@ -661,12 +661,19 @@ namespace FlareWin
                     cm.PlacementTarget = SessionList.ItemContainerGenerator.ContainerFromIndex(idx) as UIElement;
                 cm.Placement = System.Windows.Controls.Primitives.PlacementMode.Right;
                 cm.IsOpen = true;            // → Opened → OnSessionMenuOpened 现场造项
-                cm.UpdateLayout();
-                LogShot("menu: " + id + " items=" + cm.Items.Count + " → " + DescribeMenu(cm));
-                Shot("03-menu-app");
-                ShootMenu(cm, "03-menu");
-                cm.IsOpen = false;
-                LogShot("menu: 已关闭");
+                // Popup 的布局是异步的：IsOpen 之后同一帧里 MenuShell 的 ActualWidth
+                // 还是 0（父级 PopupRoot 尚未 Measure），这时候 Render 出来的就是一条
+                // 74x220 的白条 + 一个 F2 —— 03-menu.png 之前一直是这个鬼样子。
+                // 等 600ms 让 Popup 完成布局再拍，拍完立刻关，不要拖到搜索那一步。
+                Delay(600, () =>
+                {
+                    cm.UpdateLayout();
+                    LogShot("menu: " + id + " items=" + cm.Items.Count + " → " + DescribeMenu(cm));
+                    Shot("03-menu-app");
+                    ShootMenu(cm, "03-menu");
+                    cm.IsOpen = false;
+                    LogShot("menu: 已关闭");
+                });
             });
         }
 
@@ -731,7 +738,11 @@ namespace FlareWin
                 target.UpdateLayout();
                 var w = (int)Math.Ceiling(target.ActualWidth);
                 var h = (int)Math.Ceiling(target.ActualHeight);
-                if (w <= 0 || h <= 0)
+                LogShot("menu shot: shell=" + (shell != null) + " 首次尺寸 " + w + "x" + h);
+                // 不只判 <=0：Popup 早拍时 shell 会量出一个 74x220 这种畸形的窄条
+                // （宽度只容得下右侧 F2），照样能 Render，于是历史上「看着像成功」。
+                // 菜单至少要有 120 宽 40 高，否则手动 Measure/Arrange 再来一遍。
+                if (w < 120 || h < 40)
                 {
                     // Popup 里的元素有时 UpdateLayout 拿不到尺寸（它不在主窗口的
                     // 布局树里）→ 手动量一遍再排一遍
@@ -740,6 +751,7 @@ namespace FlareWin
                     target.UpdateLayout();
                     w = (int)Math.Ceiling(target.ActualWidth > 0 ? target.ActualWidth : target.DesiredSize.Width);
                     h = (int)Math.Ceiling(target.ActualHeight > 0 ? target.ActualHeight : target.DesiredSize.Height);
+                    LogShot("menu shot: 复量尺寸 " + w + "x" + h);
                 }
                 if (w <= 0 || h <= 0) { LogShot("menu shot 尺寸为 0，跳过"); return; }
                 var rtb = new RenderTargetBitmap(w, h, 96, 96, PixelFormats.Pbgra32);

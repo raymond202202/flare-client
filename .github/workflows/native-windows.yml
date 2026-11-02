@@ -171,10 +171,15 @@ jobs:
           $env:FLARE_GUI_SEARCH    = "WARP"       # 搜索高亮
           $env:FLARE_GUI_SHOT_QUIT = "1"
           $env:FLARE_GUI_SHOT      = (Resolve-Path $shots).Path
+          $env:FLARE_GUI_LOG       = Join-Path (Resolve-Path $shots).Path "gui.log"
           $env:FLARE_BIN           = (Resolve-Path "$pkg/engine/flare.exe").Path
           $exe = (Resolve-Path "$pkg/Flare.exe").Path
           $p = Start-Process -FilePath $exe -PassThru
           if (-not $p.WaitForExit(150000)) { $p.Kill(); Write-Warning "GUI 自截图超时，已强杀" }
+          if (Test-Path $env:FLARE_GUI_LOG) {
+            Write-Host "== gui.log (last 40) =="
+            Get-Content -Encoding UTF8 $env:FLARE_GUI_LOG | Select-Object -Last 40
+          } else { Write-Host "== gui.log missing ==" }
           $files = Get-ChildItem $shots -Filter *.png -ErrorAction SilentlyContinue
           if (-not $files) { throw "GUI 自截图未产出任何 png" }
           $files | Select-Object Name, Length | Format-Table -AutoSize
@@ -184,7 +189,7 @@ jobs:
         if: always()
         with:
           name: flare-windows-shots-${{ steps.v.outputs.version }}
-          path: native/windows/dist/shots/*.png
+          path: native/windows/dist/shots/*
           if-no-files-found: warn
           retention-days: 30
 

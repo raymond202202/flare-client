@@ -228,11 +228,23 @@
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
               </Grid.ColumnDefinitions>
-              <TextBlock x:Name="txt" Grid.Column="0" Text="{TemplateBinding Header}"
-                         Foreground="{TemplateBinding Foreground}"
-                         FontSize="{TemplateBinding FontSize}"
-                         FontFamily="{x:Static local:Theme.FontEmojiFamily}"
-                         VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+              <!-- Header 必须走 ContentPresenter，不能 Text="{TemplateBinding Header}"：
+                   图标改造后 Header 是个 StackPanel（MDL2 字形 + 文案两个 TextBlock），
+                   TemplateBinding 到 string 会走 TypeConverter 把它拍成类型名/空串，
+                   菜单里只剩右侧的 F2 —— 03-menu.png 74x220 只剩一个「F2」就是这个坑。
+                   ContentPresenter 两种 Header 都吃：字符串自动生成 TextBlock（下面
+                   Resources 里的隐式样式补回 TextTrimming），StackPanel 原样呈现。
+                   图标不再走 emoji：.NET Framework 的 WPF 无 COLR 支持，Segoe UI Emoji
+                   一个像素都不画，所以这里也不该再挂 FontEmojiFamily。 -->
+              <ContentPresenter x:Name="txt" Grid.Column="0" ContentSource="Header"
+                                VerticalAlignment="Center" RecognizesAccessKey="False">
+                <ContentPresenter.Resources>
+                  <Style TargetType="TextBlock">
+                    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+                    <Setter Property="TextWrapping" Value="NoWrap" />
+                  </Style>
+                </ContentPresenter.Resources>
+              </ContentPresenter>
               <TextBlock Grid.Column="1" Text="{TemplateBinding InputGestureText}"
                          Foreground="{x:Static local:Theme.TextFaint}"
                          FontSize="{x:Static local:Theme.FontSmall}"
@@ -244,7 +256,9 @@
               <Setter TargetName="bd" Property="Background" Value="{x:Static local:Theme.HoverSoft}" />
             </Trigger>
             <Trigger Property="IsEnabled" Value="False">
-              <Setter TargetName="txt" Property="Foreground" Value="{x:Static local:Theme.TextFaint}" />
+              <!-- ContentPresenter 没有 Foreground，必须走 TextElement.Foreground
+                   附加属性，才能把灰化传到它内部生成（或承载）的内容上。 -->
+              <Setter TargetName="txt" Property="TextElement.Foreground" Value="{x:Static local:Theme.TextFaint}" />
             </Trigger>
           </ControlTemplate.Triggers>
         </ControlTemplate>
