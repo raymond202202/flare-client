@@ -1,0 +1,109 @@
+name: native-linux
+
+# 出 Fedora/RHEL 系原生安装包：flare-client_<ver>.rpm（x86_64）
+# 壳 = Qt 6 Widgets（C++/CMake），在 fedora 容器内构建，保证产物与目标发行版一致。
+# 引擎不进客户端仓库，从私有引擎仓 raymond202202/flare 只读 deploy key 拉源码就地编译后内置。
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "版本号（留空=取 tag 或 <CMakeLists 版本>-dev.<sha>）"
+        required: false
+  push:
+    branches: [master]
+    tags: ["v*"]
+    paths:
+      - "src/**"
+      - "CMakeLists.txt"
+      - "packaging/**"
+      - "tests/**"
+      - ".github/workflows/native-linux.yml"
+
+concurrency:
+  group: native-linux-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: fedora:44
+    steps:
+      - name: 安装构建依赖
+        run: |
+          dnf install -y --setopt=install_weak_deps=False \
+            gcc-c++ cmake make git golang rpm-build \
+            qt6-qtbase-devel openssh-clients tar gzip findutils
+          gcc --version | head -1
+          cmake --version | head -1
+          go version
+
+      - uses: actions/checkout@v4
+
+      # 版本号与 Fedora 本地构建同源：一律取 CMakeLists.txt 的 project(flare-client VERSION …)。
+      # 正式 tag 用 tag 名（去掉前导 v），dev 构建再拼 -dev.<sha>，避免出现假版本号。
+      - name: 取版本号
+        id: v
+        shell: bash
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            V="${{ github.event.inputs.version }}"
+          elif [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            V="${GITHUB_REF_NAME#v}"
+          else
+            BASE=$(sed -n 's/^project(flare-client VERSION \([0-9][0-9.]*\).*/\1/p' CMakeLists.txt | head -1)
+            [ -z "$BASE" ] && BASE="0.0.0"
+            V="${BASE}-dev.${GITHUB_SHA::7}"
+          fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "VERSION=$V"
+
+      # build-fedora.sh 期望引擎仓在「客户端仓库的上一级、目录名 flare」，
+      # 所以 clone 到 $GITHUB_WORKSPACE/../flare，脚本就能原样复用。
+      - name: 取引擎源码
+        env:
+          ENGINE_SSH_KEY: ${{ secrets.ENGINE_SSH_KEY }}
+        run: |
+          [ -n "${ENGINE_SSH_KEY:-}" ] || { echo "::error::缺少 ENGINE_SSH_KEY secret"; exit 1; }
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null
+          printf '%s\n' "$ENGINE_SSH_KEY" | tr -d '\r' > ~/.ssh/engine_key
+          chmod 600 ~/.ssh/engine_key
+          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/engine_key -o IdentitiesOnly=yes"
+          PARENT="$(dirname "$GITHUB_WORKSPACE")"
+          rm -rf "$PARENT/flare"
+          git clone --depth 1 git@github.com:raymond202202/flare.git "$PARENT/flare"
+          ( cd "$PARENT/flare" && echo "engine commit: $(git rev-parse --short HEAD)" )
+
+      # -p: 同时产出 RPM 并归档到 packaging/dist/
+      - name: 构建 + 测试 + 打包 RPM
+        env:
+          GIT_SSH_COMMAND: "ssh -i $HOME/.ssh/engine_key -o IdentitiesOnly=yes"
+        run: |
+          chmod +x packaging/build-fedora.sh packaging/cleanup-old-builds.sh
+          ./packaging/build-fedora.sh -p
+
+      - name: 校验安装包
+        shell: bash
+        run: |
+          RPM=$(ls -1 packaging/dist/flare-client_*.rpm | tail -1)
+          test -f "$RPM" || { echo "::error::RPM 未生成"; exit 1; }
+          echo "RPM=$RPM"
+          rpm -qip "$RPM"
+          # 内置引擎必须真的在包里，否则用户装完跑不起来
+          rpm -qlp "$RPM" | grep -q 'lib64/flare-client/flare' \
+            || { echo "::error::RPM 未内置引擎"; exit 1; }
+          rpm -qlp "$RPM" | grep -q 'bin/flare-client' \
+            || { echo "::error::RPM 缺主程序"; exit 1; }
+          ls -lh "$RPM"
+          # 统一产物名带版本号，并隔离到独立目录：packaging/dist 里可能残留历史 RPM，
+          # 不能让 upload-artifact 把旧版本一起传上去。
+          mkdir -p dist-out
+          cp -f "$RPM" "dist-out/flare-client_${{ steps.v.outputs.version }}.rpm"
+          ls -lh dist-out/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flare-linux-x64-${{ steps.v.outputs.version }}
+          path: dist-out/*.rpm
+          if-no-files-found: error
