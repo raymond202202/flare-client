@@ -59,7 +59,7 @@ final class Engine: ObservableObject {
     @Published var cancelledOnce = false
 
     // 调试日志：仅当 FLARE_GUI_LOG 环境变量指向可写文件时启用（诊断用，正常用户不产生任何文件）
-    private static let logURL: URL? = {
+    nonisolated private static let logURL: URL? = {
         guard let p = ProcessInfo.processInfo.environment["FLARE_GUI_LOG"], !p.isEmpty else { return nil }
         return URL(fileURLWithPath: p)
     }()
@@ -95,16 +95,18 @@ final class Engine: ObservableObject {
         p.standardOutput = outP
         p.standardError = errP
 
+        // 这两个 handler 都是 @Sendable 闭包。`[weak self]` 捕获的是 var 语义的弱引用，
+        // 把它带进内层 Task 的并发域会直接编译失败（reference to captured var 'self'），
+        // 新版 Xcode 上必现。故一律在闭包的同步段解包成强引用常量，Task 只捕获已 Sendable 的值。
         outP.fileHandleForReading.readabilityHandler = { [weak self] h in
             let d = h.availableData
-            guard !d.isEmpty else { return }
-            Task { @MainActor in self?.feed(d) }
+            guard !d.isEmpty, let self else { return }
+            Task { @MainActor in self.feed(d) }
         }
         errP.fileHandleForReading.readabilityHandler = { [weak self] h in
             let d = h.availableData
-            guard !d.isEmpty, let s = String(data: d, encoding: .utf8) else { return }
+            guard !d.isEmpty, let s = String(data: d, encoding: .utf8), let self else { return }
             Task { @MainActor in
-                guard let self else { return }
                 for line in s.split(separator: "\n") {
                     self.stderrTail.append(String(line))
                 }
@@ -112,10 +114,11 @@ final class Engine: ObservableObject {
             }
         }
         p.terminationHandler = { [weak self] proc in
+            let code = proc.terminationStatus   // Process 本身非 Sendable，先取出纯值
+            guard let self else { return }
             Task { @MainActor in
-                guard let self else { return }
                 self.status = .stopped
-                self.statusText = "引擎已退出（code \(proc.terminationStatus)）"
+                self.statusText = "引擎已退出（code \(code)）"
                 self.busy = false
                 self.proc = nil
             }
