@@ -78,6 +78,12 @@ Section "Flare（必需）" SecCore
   SetOutPath "$INSTDIR"
   SetOverwrite try
 
+  ; 覆盖升级前先结束在跑的客户端与内置引擎，否则文件被占用，SetOverwrite try 会静默跳过
+  ; 导致新旧文件混装（版本号对不上、引擎不更新）。静默安装同样需要，故不加提示。
+  ExecWait '"$SYSDIR\taskkill.exe" /F /IM Flare.exe /T'
+  ExecWait '"$SYSDIR\taskkill.exe" /F /IM flare.exe /T'
+  Sleep 500
+
   File "${SRCDIR}\Flare.exe"
   File "${SRCDIR}\Flare.exe.config"
   File "${SRCDIR}\Newtonsoft.Json.dll"
@@ -147,6 +153,9 @@ Section "Uninstall"
   DeleteRegKey HKCU "Software\${APPNAME}"
 
   ; 询问是否一并删除用户数据（%USERPROFILE%\.flare，含 API Key 与会话记录）
+  ; 静默卸载（/S）不弹窗，默认保留用户数据——静默模式下 MessageBox 会永久阻塞且无人可点，
+  ; 且「保留」比「误删 API Key 与会话」安全得多。
+  IfSilent KeepData
   MessageBox MB_YESNO|MB_ICONQUESTION "是否同时删除你的配置与会话记录？$\r$\n位置：$PROFILE\.flare$\r$\n$\r$\n选择「否」可保留，重装后配置仍在。" IDNO KeepData
     RMDir /r "$PROFILE\.flare"
   KeepData:
@@ -154,9 +163,15 @@ SectionEnd
 
 Function .onInit
   ; 已安装则提示升级，直接覆盖安装即可
+  ;
+  ; 注意：NSIS 的 MessageBox 在 /S 静默模式下【依然会弹出并永久阻塞】——没有窗口可点，
+  ; 进程就一直挂在那里，WriteUninstaller 和注册表写入全都执行不到。
+  ; 表现为「机器上装过旧版 → 静默升级必卡死 → 目录里只有半套文件、无 Uninstall.exe」。
+  ; 因此静默模式必须显式跳过提示，直接覆盖安装。
+  IfSilent silent_ok
   ReadRegStr $0 HKCU "${UNINSTKEY}" "DisplayVersion"
-  StrCmp $0 "" done
-    MessageBox MB_OKCANCEL|MB_ICONINFORMATION "已检测到 Flare $0 已安装。$\r$\n继续将覆盖安装为 ${VERSION}，你的配置不会被删除。" IDOK done
+  StrCmp $0 "" silent_ok
+    MessageBox MB_OKCANCEL|MB_ICONINFORMATION "已检测到 Flare $0 已安装。$\r$\n继续将覆盖安装为 ${VERSION}，你的配置不会被删除。" IDOK silent_ok
     Abort
-  done:
+  silent_ok:
 FunctionEnd
