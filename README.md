@@ -12,23 +12,39 @@ Flare 是一个能自己动手做事的 AI 助手：你说话，它调工具干�
 
 ## 最新版本
 
-**0.6.186**（2026-11-01）— 修复左侧会话列表的「重影」问题：同一天里两条不同的会话，因为时间只显示到「日」、标题又相同，看上去完全一样。
+**0.6.191**（2026-11-03）— **三平台同源发布**：Fedora / Windows / macOS 由同一个 tag `v0.6.191` 在 GitHub Actions 上各自原生构建，版本号由 `CMakeLists.txt` 单一来源，产物不带 dev 尾巴。
 
-- 每个会话项固定两行：第一行标题，第二行时间；
-- 时间精确到分钟：今天 `HH:mm`，今年 `MM-dd HH:mm`，跨年 `yyyy-MM-dd`；
-- 顺带修复搜索状态下切回普通列表时部分行整行空白的缺陷。
+本版修掉会话列表「重影」的真正根因——同一个标题被画了两遍：列表 delegate 本该只画背景、把文字留给自定义绘制，但它调用的 `QStyledItemDelegate::paint()` 内部会重新执行一次 `initStyleOption`，把文本从 `DisplayRole` 原样填回来，清空动作被抵消。结果标题按整条文本画一次、又按省略后的宽度画一次，右端多出来的半截压在时间列上。改用 `QStyle::CE_ItemViewItem` 画背景后，离屏像素度量：暗像素 17264 → 12163（−29.5%），深暗像素 10333 → 5848（−43.4%），背景与选中态完好。
 
-Fedora x86_64 安装包（**当前临时下载通道**，见下方说明）：
+安装包（**主通道：GitHub Release**）：
+
+| 平台 | 文件 | 大小 |
+|---|---|---|
+| Fedora / RHEL（x86_64） | `flare-client_0.6.191.rpm` | 4.29 MB |
+| Windows（x64） | `flare-0.6.191-win-x64-setup.exe` | 4.10 MB |
+| macOS（arm64） | `Flare-0.6.191-arm64.dmg` | 5.43 MB |
+
+👉 **https://github.com/raymond202202/flare-client/releases/tag/v0.6.191**（含 `SHA256SUMS.txt`）
+
+飞书云文档备份通道（同一批文件，便于分享链接）：
 
 | 内容 | 地址 |
 |---|---|
-| `flare-client_0.6.186.rpm`（4.1 MB） | https://eqmdtenvlk7.feishu.cn/file/AbenbZeHnopx1wxIbjecAJF5nbb |
-| `SHA256SUMS.txt` | https://eqmdtenvlk7.feishu.cn/file/NLSrbMO5UotmwOxXJekcLlJ8nqd |
-| 安装与使用说明 | https://eqmdtenvlk7.feishu.cn/docx/AQfPdIR7GofCrcxCAx2cjb7tnKf |
+| `flare-client_0.6.191.rpm` | https://eqmdtenvlk7.feishu.cn/file/N5x8bWtsWoA450xBvTccT2e4nqd |
+| `flare-0.6.191-win-x64-setup.exe` | https://eqmdtenvlk7.feishu.cn/file/RyaYbOJoZop30NxIPkBcwAQVnAe |
+| `Flare-0.6.191-arm64.dmg` | https://eqmdtenvlk7.feishu.cn/file/Lggvb9XoMoqlLExFRXdciUEInzb |
+| `SHA256SUMS.txt` | https://eqmdtenvlk7.feishu.cn/file/KohSbCVwkos0kExes6GcFfrUnrd |
+| 安装与使用说明 | https://eqmdtenvlk7.feishu.cn/docx/J2HgdYYGEonGA3xF6dFcf9rrnbh |
 
-SHA256：`3855e80991d78a3d5a57a860523cd7406533262d39bc29370667eeb70d068bbd`
+三个包的 SHA256：
 
-> **分发说明**：源码、版本历史、变更记录以本仓库为准（主阵地）。项目目前没有自建下载服务器，二进制安装包**暂时**通过飞书云文档分发，后续会迁到自有站点；任何情况下都可以按「六、从源码构建」自行从源码打包。
+| 文件 | SHA256 |
+|---|---|
+| `flare-client_0.6.191.rpm` | `569c75e55bc2d3c5d236736ec8321b579c2b7b2d6c188fed5995a4de4b836940` |
+| `flare-0.6.191-win-x64-setup.exe` | `bdb9da09796f66771ebebc21b9f2038f27e9037b8edfd8cdc9edd1a15e408921` |
+| `Flare-0.6.191-arm64.dmg` | `8c65ad01fd6b3606dbee32c434e1744a36b73afacf220cfe5de1ed39f81ec59a` |
+
+> **分发说明**：源码、版本历史、变更记录以本仓库为准（主阵地），二进制安装包经 GitHub Releases 分发；飞书云文档是并行的临时通道，仅为方便把链接转给不常用 GitHub 的人。后续会迁到自有站点。任何情况下都可以按「六、从源码构建」自行从源码打包。
 
 历史版本变更见 [CHANGELOG.md](CHANGELOG.md)。
 
@@ -38,11 +54,11 @@ SHA256：`3855e80991d78a3d5a57a860523cd7406533262d39bc29370667eeb70d068bbd`
 
 | 平台 | 壳 | 安装包 | 真机验证 |
 |---|---|---|---|
-| **Fedora Linux**（x86_64） | Qt 6 | `.rpm` / `.deb` | ✅ 已逐版打磨并截图核验，**样板平台** |
-| Windows（x64 / arm64） | WPF（.NET，`native/windows`） | `setup.exe`（NSIS） | ⚠️ 可构建、装机流程已通，**尚未在真机逐项复验** |
-| macOS（arm64） | Swift / AppKit（`native/macos`） | `.pkg` | ⚠️ 可构建，**尚未在真机逐项复验** |
+| **Fedora Linux**（x86_64） | Qt 6 | `.rpm`（CI 出包） | ✅ 已逐版打磨并截图核验，**样板平台** |
+| Windows（x64） | WPF（.NET，`native/windows`） | `setup.exe`（NSIS，CI 出包） | ✅ 静默安装/卸载/重装闭环通过，界面截图核验 |
+| macOS（arm64） | Swift / AppKit（`native/macos`） | `.dmg`（CI 出包） | ⚠️ 构建通过，界面复验进行中 |
 
-> 平台差异只体现在「外壳」上；三种壳调用的是**同一个 Go 引擎、同一套 JSON 协议**，所以行为一致。Windows/macOS 壳目前的打磨进度落后于 Fedora，功能对齐中。
+> 平台差异只体现在「外壳」上；三种壳调用的是**同一个 Go 引擎、同一套 JSON 协议**，所以行为一致。三平台均由 GitHub Actions 在原生环境构建，版本号统一取自 `CMakeLists.txt`。
 
 ---
 
@@ -69,11 +85,10 @@ Flare 的交付物是**双包制**，同一个版本会出两个包：
 
 ```bash
 # 优先用 dnf：自动解决依赖（Qt6 运行库）
-sudo dnf install ./flare-client-<版本>-1.fc<NN>.x86_64.rpm
-
-# deb 系
-sudo apt install ./flare-client_<版本>_amd64.deb
+sudo dnf install ./flare-client_<版本>.rpm
 ```
+
+> **deb 系说明**：GitHub Actions 目前只产出 rpm（Fedora 容器内构建，产物与目标发行版一致）。deb 需要自行用 `packaging/build-fedora.sh` 在 Debian/Ubuntu 上打包，打完 `sudo apt install ./flare-client_<版本>_amd64.deb`。这不是本仓库的发布承诺，仅作源码级支持。
 
 装完在**应用菜单**里找 **Flare**，或终端执行 `flare-client`。
 
@@ -83,7 +98,7 @@ sudo apt install ./flare-client_<版本>_amd64.deb
 
 ### Windows
 
-双击 `flare-client-<版本>-win-x64-setup.exe`，向导式安装：
+双击 `flare-<版本>-win-x64-setup.exe`，向导式安装：
 
 - 装到**用户目录**，**不弹 UAC、不需要管理员权限**
 - 自带开始菜单项与桌面快捷方式；卸载走「应用和功能」
@@ -91,7 +106,7 @@ sudo apt install ./flare-client_<版本>_amd64.deb
 
 ### macOS
 
-双击 `flare-client-<版本>-arm64.pkg` 走系统安装向导。首次启动若被 Gatekeeper 拦，右键 →「打开」。
+打开 `Flare-<版本>-arm64.dmg`，把 **Flare** 拖进「应用程序」。首次启动若被 Gatekeeper 拦：右键 →「打开」，或执行 `xattr -dr com.apple.quarantine /Applications/Flare.app`。
 
 ### 首次启动必须做的一件事：填 API Key
 
