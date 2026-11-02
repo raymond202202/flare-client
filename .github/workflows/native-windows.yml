@@ -1,0 +1,154 @@
+name: native-windows
+
+# 出 Windows 原生安装包：flare-<ver>-win-x64-setup.exe
+# 壳 = WPF/.NET Framework 4.8（Win10 1809+ 自带运行时，用户零依赖），引擎内置 flare.exe。
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "版本号（留空=取 tag 或 0.0.0-dev.<sha>）"
+        required: false
+  push:
+    tags: ["v*"]
+    paths:
+      - "native/windows/**"
+      - ".github/workflows/native-windows.yml"
+
+concurrency:
+  group: native-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest      # x64
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 版本号
+        id: v
+        shell: pwsh
+        run: |
+          if ("${{ github.event.inputs.version }}") {
+            $v = "${{ github.event.inputs.version }}"
+          } elseif ("${{ github.ref_type }}" -eq "tag") {
+            $v = "${{ github.ref_name }}" -replace '^v',''
+          } else {
+            $v = "0.0.0-dev." + "${{ github.sha }}".Substring(0,7)
+          }
+          "version=$v" >> $env:GITHUB_OUTPUT
+          Write-Host "VERSION=$v"
+
+      # ---------- 引擎（Go / windows amd64，CGO 关闭） ----------
+      - name: 取引擎源码
+        shell: pwsh
+        env:
+          ENGINE_SSH_KEY: ${{ secrets.ENGINE_SSH_KEY }}
+        run: |
+          $dir = "$env:USERPROFILE\.ssh"
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          ssh-keyscan -t ed25519 github.com 2>$null | Out-File -Append -Encoding ascii "$dir\known_hosts"
+          $key = "$env:ENGINE_SSH_KEY" -replace "`r",""
+          # 用 OpenSSH 而非 putty：写文件后靠 GIT_SSH_COMMAND 指定，避免 agent 平台差异
+          Set-Content -Path "$dir\engine_key" -Value $key -NoNewline
+          icacls "$dir\engine_key" /inheritance:r /grant:r "${env:USERNAME}:R" | Out-Null
+          git config --global core.sshCommand "ssh -i `"$dir/engine_key`" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+          git clone --depth 1 git@github.com:raymond202202/flare.git engine
+          if ($LASTEXITCODE -ne 0) { throw "引擎仓 clone 失败" }
+          Push-Location engine; Write-Host "engine commit: $(git rev-parse --short HEAD)"; Pop-Location
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: engine/go.mod
+          cache-dependency-path: engine/go.sum
+
+      - name: 编译引擎（windows/amd64）
+        shell: pwsh
+        run: |
+          Push-Location engine
+          $env:CGO_ENABLED = "0"
+          $env:GOOS = "windows"
+          $env:GOARCH = "amd64"
+          go build -trimpath -ldflags "-s -w" -o "../native/windows/engine/flare.exe" ./cmd/flare
+          if ($LASTEXITCODE -ne 0) { throw "引擎编译失败" }
+          Pop-Location
+          & ./native/windows/engine/flare.exe --version
+
+      # ---------- 客户端（WPF / net48） ----------
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: 编译 WPF 壳
+        shell: pwsh
+        run: |
+          msbuild native/windows/FlareWin.csproj `
+            /restore `
+            /p:Configuration=Release `
+            /p:Platform=x64 `
+            /p:Version=${{ steps.v.outputs.version }} `
+            /p:FileVersion=${{ steps.v.outputs.version }}.0 `
+            /p:AssemblyVersion=${{ steps.v.outputs.version }}.0 `
+            /v:minimal
+          if ($LASTEXITCODE -ne 0) { throw "WPF 编译失败" }
+
+      - name: 组装安装包源目录
+        shell: pwsh
+        run: |
+          $bin = Get-ChildItem -Recurse -Directory -Filter net48 native/windows/bin |
+                 Where-Object { $_.FullName -match 'Release' } | Select-Object -First 1
+          if (-not $bin) { throw "找不到 bin\Release\net48 输出目录" }
+          Write-Host "输出目录: $($bin.FullName)"
+          $pkg = "native/windows/dist/pkg"
+          Remove-Item -Recurse -Force native/windows/dist -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path "$pkg/engine" | Out-Null
+          Copy-Item "$($bin.FullName)\Flare.exe" $pkg
+          Copy-Item "$($bin.FullName)\Newtonsoft.Json.dll" $pkg
+          Copy-Item "$($bin.FullName)\engine\flare.exe" "$pkg/engine" -ErrorAction SilentlyContinue
+          if (-not (Test-Path "$pkg/engine/flare.exe")) {
+            Copy-Item "native/windows/engine/flare.exe" "$pkg/engine"
+          }
+          # net48 项目没 App.config 时不会生成 Flare.exe.config，NSIS 里 File 指令要求它存在
+          if (Test-Path "$($bin.FullName)\Flare.exe.config") {
+            Copy-Item "$($bin.FullName)\Flare.exe.config" $pkg
+          } else {
+            New-Item -ItemType File -Path "$pkg/Flare.exe.config" | Out-Null
+          }
+          Copy-Item "native/windows/README-WINDOWS.txt" "$pkg/README.txt"
+          Get-ChildItem -Recurse $pkg | Select-Object FullName, Length | Format-Table -AutoSize
+
+      - name: NSIS 打包
+        shell: pwsh
+        run: |
+          $mk = "C:\Program Files (x86)\NSIS\makensis.exe"
+          if (-not (Test-Path $mk)) {
+            choco install nsis -y --no-progress | Out-Null
+            $mk = "C:\Program Files (x86)\NSIS\makensis.exe"
+          }
+          if (-not (Test-Path $mk)) { throw "找不到 makensis" }
+          Push-Location native/windows
+          & $mk -INPUTCHARSET UTF8 `
+            "-DVERSION=${{ steps.v.outputs.version }}" `
+            "-DSRCDIR=dist\pkg" `
+            "-DOUTDIR=dist" `
+            installer.nsi
+          if ($LASTEXITCODE -ne 0) { throw "NSIS 打包失败" }
+          Pop-Location
+          Get-ChildItem native/windows/dist/*.exe | Select-Object Name, Length
+
+      - name: 校验安装包
+        shell: pwsh
+        run: |
+          $setup = "native/windows/dist/flare-${{ steps.v.outputs.version }}-win-x64-setup.exe"
+          if (-not (Test-Path $setup)) { throw "安装包未生成：$setup" }
+          $mb = [math]::Round((Get-Item $setup).Length / 1MB, 1)
+          Write-Host "安装包大小: $mb MB"
+          if ($mb -gt 20) { Write-Warning "超过飞书单文件 20MB 上限，需要拆分或换分发方式" }
+
+      - name: 上传安装包
+        uses: actions/upload-artifact@v4
+        with:
+          name: flare-windows-x64-${{ steps.v.outputs.version }}
+          path: native/windows/dist/flare-*-setup.exe
+          if-no-files-found: error
+          retention-days: 30

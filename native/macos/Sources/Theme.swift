@@ -36,7 +36,7 @@ enum Theme {
     static let bgSoft = Color(hex: 0xfffbf0)
     static let bgAlt = Color(hex: 0xfff3d6)
     static let hoverSoft = Color(hex: 0xffedd0)
-    static let borderSoft = Color(hex: 0xffe0b2)
+    static let borderSoft = Color(hex: 0xfde6bf)   // Qt flametheme.h borderSoft 逐字对齐
     static let dangerBorder = Color(hex: 0xfda4a4)
     static let dangerText = Color(hex: 0xdc2626)
 

@@ -1,0 +1,95 @@
+name: native-macos
+
+# 出 Apple 芯片（arm64）原生安装包：Flare-<ver>-arm64.dmg
+# 引擎不进客户端仓库，从私有引擎仓 raymond202202/flare 只读 deploy key 拉源码就地编译。
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "版本号（留空=取 tag 或 0.0.0-dev.<sha>）"
+        required: false
+  push:
+    tags: ["v*"]
+    paths:
+      - "native/macos/**"
+      - ".github/workflows/native-macos.yml"
+
+concurrency:
+  group: native-macos-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-14          # Apple Silicon（arm64）
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 版本号
+        id: v
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            V="${{ github.event.inputs.version }}"
+          elif [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            V="${GITHUB_REF_NAME#v}"
+          else
+            V="0.0.0-dev.${GITHUB_SHA::7}"
+          fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "VERSION=$V"
+
+      # ---------- 引擎（Go，纯 stdlib + modernc.org/sqlite，CGO_ENABLED=0 可交叉编译） ----------
+      - name: 取引擎源码
+        env:
+          ENGINE_SSH_KEY: ${{ secrets.ENGINE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null
+          eval "$(ssh-agent -s)"
+          echo "$ENGINE_SSH_KEY" | tr -d '\r' | ssh-add - >/dev/null
+          mkdir -p engine
+          git clone --depth 1 git@github.com:raymond202202/flare.git engine
+          cd engine && echo "engine commit: $(git rev-parse --short HEAD)"
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: engine/go.mod
+          cache-dependency-path: engine/go.sum
+
+      - name: 编译引擎（darwin/arm64）
+        run: |
+          cd engine
+          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 \
+            go build -trimpath -ldflags "-s -w" -o "$RUNNER_TEMP/flare" ./cmd/flare
+          chmod +x "$RUNNER_TEMP/flare"
+          "$RUNNER_TEMP/flare" --version
+
+      # ---------- 客户端（Swift 原生，无 Node） ----------
+      - name: 打包 .app + .dmg
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+          ENGINE_BIN: ${{ runner.temp }}/flare
+        run: |
+          cd native/macos
+          chmod +x build.sh
+          ./build.sh
+          ls -lh build/
+
+      - name: 校验产物
+        run: |
+          DMG="native/macos/build/Flare-${{ steps.v.outputs.version }}-arm64.dmg"
+          test -f "$DMG" || { echo "::error::DMG 未生成：$DMG"; exit 1; }
+          hdiutil verify "$DMG" | tail -2
+          APP="native/macos/build/Flare.app"
+          test -x "$APP/Contents/MacOS/Flare" || { echo "::error::主程序缺失"; exit 1; }
+          test -x "$APP/Contents/Resources/bin/flare" || { echo "::error::内置引擎缺失"; exit 1; }
+          lipo -archs "$APP/Contents/MacOS/Flare"
+
+      - name: 上传 DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: flare-macos-arm64-${{ steps.v.outputs.version }}
+          path: native/macos/build/Flare-*.dmg
+          if-no-files-found: error
+          retention-days: 30

@@ -11,13 +11,12 @@ struct ContentView: View {
     @EnvironmentObject var engine: Engine
     @State private var draft: String = ""
     @State private var showSettings = false
-    @State private var filter: String = ""
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
-                SidebarView(filter: $filter)
+                SidebarView()
                     .frame(width: 220)
                     .background(Theme.bgSoft)
                 Rectangle().fill(Theme.borderSoft).frame(width: 1)
@@ -53,36 +52,97 @@ struct ContentView: View {
 
 struct SidebarView: View {
     @EnvironmentObject var engine: Engine
-    @Binding var filter: String
     @Environment(\.openWindow) private var openWindow
     @State private var hovered: String? = nil
     @State private var renaming: SessionInfo? = nil
     @State private var renameText: String = ""
+    @State private var purgeTarget: SessionInfo? = nil
 
+    private var isSearching: Bool {
+        !engine.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// 数据一律来自引擎：搜索态用 search_sessions 回执，其余按当前视图取。
+    /// 这里不再做本地二次过滤——引擎是 LIKE 匹配，本地再滤一遍只会让两边口径越走越远
+    /// （Qt 侧同样只认引擎回执）。
+    private var source: [SessionInfo] {
+        if isSearching { return engine.searchHits }
+        return engine.showingArchived ? engine.archivedSessions : engine.sessions
+    }
+
+    /// 空会话不占列表：引擎建库就写 title='新会话'，无真标题也无首条消息预览，
+    /// 点开是空的纯噪音（Qt sessionlistwidget.cpp:618 同口径）。
     private var visible: [SessionInfo] {
-        let list = engine.showingArchived ? engine.archivedSessions : engine.sessions
-        let f = filter.trimmingCharacters(in: .whitespaces)
-        if f.isEmpty { return list }
-        return list.filter {
-            $0.title.localizedCaseInsensitiveContains(f) || $0.preview.localizedCaseInsensitiveContains(f)
+        source.filter { !(FlareTime.isPlaceholderTitle($0.title) && $0.preview.isEmpty) }
+    }
+
+    /// 分组：搜索态与回收站平铺；最近视图 = 置顶 → 今天 → 昨天 → 最近 7 天 → 更早
+    private var groups: [(key: String, rows: [SessionInfo])] {
+        if isSearching || engine.showingArchived { return [("", visible)] }
+        var pinRows: [SessionInfo] = []
+        var buckets: [String: [SessionInfo]] = [:]
+        for s in visible {
+            if engine.isPinned(s.id) {
+                pinRows.append(s)
+            } else {
+                buckets[FlareTime.section(s.updatedAt), default: []].append(s)
+            }
         }
+        var out: [(key: String, rows: [SessionInfo])] = []
+        if !pinRows.isEmpty { out.append(("📌 置顶", pinRows)) }
+        for key in ["今天", "昨天", "最近 7 天", "更早"] {
+            if let rows = buckets[key], !rows.isEmpty { out.append((key, rows)) }
+        }
+        return out
+    }
+
+    /// 主文本：真标题优先；占位标题拿首条消息预览顶上（Qt M8 口径）。
+    /// 截断交给 SwiftUI 的 lineLimit，数据层不动字符。
+    private func displayTitle(_ s: SessionInfo) -> String {
+        let t = s.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        var main = t
+        if FlareTime.isPlaceholderTitle(t) {
+            let p = s.preview.trimmingCharacters(in: .whitespacesAndNewlines)
+            main = p.isEmpty ? "新会话" : p.replacingOccurrences(of: "\n", with: " ")
+        }
+        if engine.isPinned(s.id) { main = "📌 " + main }
+        return main
+    }
+
+    private func openRename(_ s: SessionInfo) {
+        renameText = FlareTime.isPlaceholderTitle(s.title) ? "" : s.title
+        renaming = s
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("会话")
-                .font(.system(size: Theme.FS.title, weight: .semibold))
-                .foregroundColor(Theme.orange)
+            HStack(spacing: 6) {
+                Text(engine.showingArchived ? "📦 归档箱" : "会话")
+                    .font(.system(size: Theme.FS.title, weight: .semibold))
+                    .foregroundColor(Theme.orange)
+                Spacer()
+                if engine.showingArchived {
+                    Button("返回") { engine.loadSessions(); engine.runSearch("") }
+                        .buttonStyle(.plain)
+                        .font(.system(size: Theme.FS.faint))
+                        .foregroundColor(Theme.textSoft)
+                }
+            }
 
             // 搜索框：单行，高 30，圆角 6，底白，边 borderSoft，文字 textGray 13
             HStack(spacing: 4) {
                 Text("🔍").font(.system(size: 11))
-                TextField("搜索会话…", text: $filter)
+                // 单一数据源：输入框直接读写 engine.searchQuery。
+                // 之前绑 ContentView 的本地 @State filter，导致自动化/外部调用 runSearch 时
+                // 输入框与列表不同步（截图里搜索框空、列表没过滤）。
+                TextField("搜索会话…", text: Binding(
+                    get: { engine.searchQuery },
+                    set: { engine.runSearch($0) }))
                     .textFieldStyle(.plain)
                     .font(.system(size: Theme.FS.base))
                     .foregroundColor(Theme.textGray)
-                if !filter.isEmpty {
-                    Button { filter = "" } label: {
+                if !engine.searchQuery.isEmpty {
+                    Button { engine.runSearch("") } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 11))
                             .foregroundColor(Theme.textFaint)
@@ -99,26 +159,41 @@ struct SidebarView: View {
             // 会话列表：弹性占满；底 bgSoft、边 borderSoft、圆角 8、内边距 4
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 1) {
-                    ForEach(visible) { s in
-                        SessionRow(session: s,
-                                   selected: s.id == engine.sessionID,
-                                   hovered: hovered == s.id)
-                            .contentShape(Rectangle())
-                            .onHover { inside in
-                                if inside { hovered = s.id }
-                                else if hovered == s.id { hovered = nil }
-                            }
-                            .onTapGesture { engine.switchSession(s.id) }
-                            .contextMenu {
-                                Button("重命名…") {
-                                    renameText = s.title
-                                    renaming = s
+                    ForEach(groups, id: \.key) { group in
+                        if !group.key.isEmpty && group.key != "📌 置顶" {
+                            Text(group.key)
+                                .font(.system(size: Theme.FS.faint, weight: .medium))
+                                .foregroundColor(Theme.textFaint)
+                                .padding(.horizontal, 6)
+                                .padding(.top, 6)
+                                .padding(.bottom, 1)
+                        } else if group.key == "📌 置顶" {
+                            Text(group.key)
+                                .font(.system(size: Theme.FS.faint, weight: .medium))
+                                .foregroundColor(Theme.amber)
+                                .padding(.horizontal, 6)
+                                .padding(.top, 6)
+                                .padding(.bottom, 1)
+                        }
+                        ForEach(group.rows) { s in
+                            SessionRow(title: displayTitle(s),
+                                       preview: FlareTime.isPlaceholderTitle(s.title) ? "" : s.preview,
+                                       keyword: isSearching ? engine.searchQuery : "",
+                                       stamp: FlareTime.listStampCompact(s.updatedAt),
+                                       full: FlareTime.fullStamp(s.updatedAt),
+                                       selected: s.id == engine.sessionID,
+                                       hovered: hovered == s.id)
+                                .contentShape(Rectangle())
+                                .onHover { inside in
+                                    if inside { hovered = s.id }
+                                    else if hovered == s.id { hovered = nil }
                                 }
-                                Button("删除", role: .destructive) { engine.deleteSession(s.id) }
-                            }
+                                .onTapGesture { engine.switchSession(s.id) }
+                                .contextMenu { rowMenu(s) }
+                        }
                     }
                     if visible.isEmpty {
-                        Text(engine.showingArchived ? "暂无归档会话" : "暂无会话")
+                        Text(emptyHint)
                             .font(.system(size: Theme.FS.small))
                             .foregroundColor(Theme.textFaint)
                             .frame(maxWidth: .infinity, alignment: .center)
@@ -139,13 +214,16 @@ struct SidebarView: View {
                 }
                 SideButton(title: "删除", fg: Theme.orange, bg: Theme.bgWindow,
                            hoverBg: Theme.hoverSoft, border: Theme.borderSoft) {
-                    engine.deleteSession(engine.sessionID)
+                    if engine.showingArchived { purgeTarget = currentRow() }
+                    else { engine.archiveSession(engine.sessionID) }
                 }
             }
             // 归档 / 记忆 / 技能 / 设置：Qt 侧逐个 addWidget，各占整行
-            SideButton(title: "📦 归档", fg: Theme.amber, bg: Theme.bgWindow,
+            SideButton(title: engine.showingArchived ? "↩︎ 返回最近会话" : "📦 归档箱",
+                       fg: Theme.amber, bg: Theme.bgWindow,
                        hoverBg: Theme.hoverSoft, border: Theme.borderSoft) {
                 if engine.showingArchived { engine.loadSessions() } else { engine.loadArchived() }
+                engine.runSearch("")
             }
             SideButton(title: "🧠 记忆", fg: Theme.orange, bg: Theme.bgWindow,
                        hoverBg: Theme.hoverSoft, border: Theme.borderSoft) {
@@ -162,43 +240,83 @@ struct SidebarView: View {
         }
         .padding(8)
         .frame(width: 220)
-        .sheet(item: $renaming) { s in
-            VStack(alignment: .leading, spacing: 10) {
-                Text("重命名会话")
-                    .font(.system(size: Theme.FS.title, weight: .semibold))
-                    .foregroundColor(Theme.orange)
-                TextField("会话标题", text: $renameText)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: Theme.FS.body))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(Theme.bgWindow))
-                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.borderSoft, lineWidth: 1))
-                HStack(spacing: 8) {
-                    Spacer()
-                    Button("取消") { renaming = nil }
-                        .buttonStyle(.plain)
-                        .font(.system(size: Theme.FS.base))
-                        .foregroundColor(Theme.textSoft)
-                    Button {
-                        let t = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
-                        if !t.isEmpty { engine.renameSession(s.id, title: t) }
-                        renaming = nil
-                    } label: {
-                        Text("保存")
-                            .font(.system(size: Theme.FS.base))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 6)
-                            .background(RoundedRectangle(cornerRadius: 6).fill(Theme.orange))
-                    }
-                    .buttonStyle(.plain)
-                }
+        .sheet(item: $renaming) { s in renameSheet(s) }
+        .alert("彻底删除会话？", isPresented: Binding(
+            get: { purgeTarget != nil },
+            set: { if !$0 { purgeTarget = nil } }
+        ), presenting: purgeTarget) { s in
+            Button("取消", role: .cancel) { purgeTarget = nil }
+            Button("彻底删除", role: .destructive) {
+                engine.deleteSession(s.id)
+                purgeTarget = nil
             }
-            .padding(16)
-            .frame(width: 340)
-            .background(Theme.bgSoft)
+        } message: { s in
+            Text("「\(displayTitle(s))」的消息会从引擎里真删掉，不进回收站，无法恢复。")
         }
+    }
+
+    private var emptyHint: String {
+        if isSearching { return "没有匹配的会话" }
+        return engine.showingArchived ? "回收站是空的" : "还没有会话，点「＋ 新建」开始"
+    }
+
+    /// 「删除」按钮在回收站视图＝对当前选中会话彻底删除
+    private func currentRow() -> SessionInfo? {
+        visible.first { $0.id == engine.sessionID }
+    }
+
+    @ViewBuilder
+    private func rowMenu(_ s: SessionInfo) -> some View {
+        Button("重命名…") { openRename(s) }
+        Button(engine.isPinned(s.id) ? "取消置顶" : "置顶") { engine.togglePin(s.id) }
+        Divider()
+        if engine.showingArchived {
+            Button("恢复会话") { engine.restoreSession(s.id) }
+            Button("清空消息") { engine.clearMessages(s.id) }
+            Divider()
+            Button("彻底删除…", role: .destructive) { purgeTarget = s }
+        } else {
+            Button("移入回收站") { engine.archiveSession(s.id) }
+        }
+    }
+
+    @ViewBuilder
+    private func renameSheet(_ s: SessionInfo) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("重命名会话")
+                .font(.system(size: Theme.FS.title, weight: .semibold))
+                .foregroundColor(Theme.orange)
+            TextField("会话标题", text: $renameText)
+                .textFieldStyle(.plain)
+                .font(.system(size: Theme.FS.body))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Theme.bgWindow))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.borderSoft, lineWidth: 1))
+            HStack(spacing: 8) {
+                Spacer()
+                Button("取消") { renaming = nil }
+                    .buttonStyle(.plain)
+                    .font(.system(size: Theme.FS.base))
+                    .foregroundColor(Theme.textSoft)
+                Button {
+                    let t = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !t.isEmpty { engine.renameSession(s.id, title: t) }
+                    renaming = nil
+                } label: {
+                    Text("保存")
+                        .font(.system(size: Theme.FS.base))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 6)
+                        .background(RoundedRectangle(cornerRadius: 6).fill(Theme.orange))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(16)
+        .frame(width: 340)
+        .background(Theme.bgSoft)
     }
 }
 
@@ -231,62 +349,48 @@ struct SideButton: View {
 }
 
 /// 会话列表项：双行（标题 + 预览 · 时间），悬停 hoverSoft、选中 orange 底白字
+/// 侧栏行：主文本（标题或首条预览）+ 副行（预览）+ 右侧时间列。
+/// 时间单独一列右对齐，不拼进副行字符串——Qt 侧就是这么画的
+/// （searchhighlightdelegate.cpp:134，area 右边让 12pt 给时间列）。
 struct SessionRow: View {
-    let session: SessionInfo
+    let title: String
+    let preview: String
+    /// 搜索命中词：非空时标题/预览里的命中段铺琥珀底（对齐 Qt SearchHighlightDelegate）
+    var keyword: String = ""
+    let stamp: String
+    let full: String
     let selected: Bool
     let hovered: Bool
 
-    /// 与 Qt sessionlistwidget.cpp 一致的拼接规则：预览（截 24 字）在前，时间在后；无预览则只显示时间
-    private var subtitle: String {
-        var second = ""
-        if !session.preview.isEmpty {
-            let raw = session.preview.trimmingCharacters(in: .whitespacesAndNewlines)
-            second = raw.count > 24 ? String(raw.prefix(24)) + "…" : raw
-        }
-        let t = shortTime(session.updatedAt)
-        if !t.isEmpty { second += (second.isEmpty ? "" : "  ·  ") + t }
-        return second
-    }
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(session.title.isEmpty ? "新会话" : session.title)
-                .font(.system(size: Theme.FS.base, weight: selected ? .semibold : .regular))
-                .foregroundColor(selected ? Color.white : Theme.textMain)
-                .lineLimit(1)
-            if !subtitle.isEmpty {
-                Text(subtitle)
-                    .font(.system(size: Theme.FS.faint))
-                    .foregroundColor(selected ? Color.white.opacity(0.85) : Theme.textMuted)
+        HStack(alignment: .bottom, spacing: 6) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(highlighted(title, keyword: keyword, selected: selected))
+                    .font(.system(size: Theme.FS.base, weight: selected ? .semibold : .regular))
+                    .foregroundColor(selected ? .white : Theme.textMain)
                     .lineLimit(1)
+                    .truncationMode(.tail)
+                if !preview.isEmpty {
+                    Text(highlighted(preview.replacingOccurrences(of: "\n", with: " "), keyword: keyword, selected: selected))
+                        .font(.system(size: Theme.FS.faint))
+                        .foregroundColor(selected ? Color.white.opacity(0.85) : Theme.textMuted)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Text(stamp)
+                .font(.system(size: Theme.FS.faint))
+                .foregroundColor(selected ? Color.white.opacity(0.8) : Theme.textSoft)
+                .lineLimit(1)
+                .fixedSize()
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 6)
-        .padding(.vertical, 8)
+        .padding(.vertical, 6)
         .background(RoundedRectangle(cornerRadius: 6)
             .fill(selected ? Theme.orange : (hovered ? Theme.hoverSoft : Color.clear)))
+        .help(full.isEmpty ? title : full)
     }
-}
-
-/// Qt `shortTime` 对齐：今天 HH:mm，其余 MM-dd；解析失败退化为前 10 字符
-func shortTime(_ iso: String) -> String {
-    guard !iso.isEmpty else { return "" }
-    let cleaned = iso.replacingOccurrences(of: "Z", with: "")
-    let f = DateFormatter()
-    f.locale = Locale(identifier: "en_US_POSIX")
-    f.timeZone = TimeZone.current
-    var parsed: Date? = nil
-    for fmt in ["yyyy-MM-dd'T'HH:mm:ss.SSS", "yyyy-MM-dd'T'HH:mm:ss",
-                "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd"] {
-        f.dateFormat = fmt
-        if let d = f.date(from: cleaned) { parsed = d; break }
-    }
-    guard let d = parsed else { return String(iso.prefix(10)) }
-    let out = DateFormatter()
-    out.locale = Locale(identifier: "en_US_POSIX")
-    out.dateFormat = Calendar.current.isDateInToday(d) ? "HH:mm" : "MM-dd"
-    return out.string(from: d)
 }
 
 // MARK: - 聊天区
@@ -584,4 +688,25 @@ struct StatusBarView: View {
         .background(Theme.bgSoft)
         .overlay(Rectangle().fill(Theme.borderSoft).frame(height: 1), alignment: .top)
     }
+}
+
+// MARK: - 搜索高亮
+
+/// 把 keyword 的每一处命中铺琥珀底色 + 暗琥珀字色，其余段落正常。
+/// 逐字对齐 Qt `SearchHighlightDelegate`：keyword 先 trim、大小写不敏感、
+/// 命中底色 Theme.yellow(#fbbf24)、字色 Theme.dark(#b45309)；
+/// 选中行不铺底（底色已是主题橙，铺琥珀会糊成一团，Qt 侧同样只描字不铺底）。
+func highlighted(_ text: String, keyword: String, selected: Bool = false) -> AttributedString {
+    var attr = AttributedString(text)
+    let kw = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
+    if kw.isEmpty || selected { return attr }
+    var from = attr.startIndex
+    while from < attr.endIndex,
+          let r = attr[from...].range(of: kw, options: .caseInsensitive) {
+        attr[r].backgroundColor = Theme.yellow
+        attr[r].foregroundColor = Theme.dark
+        from = r.upperBound
+        if from >= attr.endIndex { break }
+    }
+    return attr
 }

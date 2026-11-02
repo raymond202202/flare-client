@@ -20,6 +20,8 @@ struct SessionInfo: Identifiable, Equatable {
     var updatedAt: String
     var preview: String = ""
     var archived: Bool = false
+    /// 引擎给的消息条数，只进 tooltip（侧栏 168pt 塞不下）
+    var messageCount: Int = 0
 }
 
 struct MemoryItem: Identifiable, Equatable {

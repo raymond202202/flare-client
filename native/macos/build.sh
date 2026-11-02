@@ -59,5 +59,39 @@ codesign --force --deep --sign - "$BUNDLE" 2>/dev/null || echo "   （codesign �
 
 echo "==> 体积"
 du -sh "$BUNDLE"
+
+# DMG：分发形态。固定卷名不带版本，避免同一个 DMG 在不同版本下卷名漂移；
+# 文件名带版本+架构，方便多包并存。
+if [ "${MAKE_DMG:-1}" = "1" ] && command -v hdiutil >/dev/null 2>&1; then
+    echo "==> 打包 DMG"
+    DMG="$OUT/${APP_NAME}-${VERSION}-${ARCH}.dmg"
+    STAGE="$OUT/.dmg-stage"
+    rm -rf "$STAGE"
+    mkdir -p "$STAGE"
+    cp -R "$BUNDLE" "$STAGE/"
+    ln -s /Applications "$STAGE/Applications"
+    cat > "$STAGE/首次打开说明.txt" <<'TXT'
+Flare —— 安装说明
+=================
+
+1. 把左边的 Flare 拖到右边的「Applications」（应用程序）文件夹。
+2. 第一次打开时 macOS 会拦一下（这是未上架 App Store 的应用都会遇到的）：
+
+   方法 A（推荐）：在「应用程序」里右键点 Flare → 选「打开」→ 再点「打开」。
+   方法 B（命令行）：
+       xattr -dr com.apple.quarantine /Applications/Flare.app
+
+3. 引擎已内置在 Flare.app 里，不需要另外装 Node 或 flare 引擎。
+   配置 API Key：打开 Flare → 左下「设置」→ 填入 provider 与 key。
+   配置文件位置：~/.flare/.env
+
+系统要求：Apple 芯片（arm64）Mac，macOS 13 或更新版本。
+TXT
+    hdiutil create -volname "$APP_NAME $VERSION" -srcfolder "$STAGE" \
+        -ov -format UDZO "$DMG" >/dev/null
+    rm -rf "$STAGE"
+    echo "==> DMG：$DMG（$(du -h "$DMG" | cut -f1)）"
+fi
+
 echo "==> 完成：$BUNDLE"
 echo "   启动：open $BUNDLE"

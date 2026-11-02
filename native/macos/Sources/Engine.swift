@@ -31,6 +31,15 @@ final class Engine: ObservableObject {
     @Published var lastError: String? = nil
     @Published var enginePath: String = ""
 
+    /// 置顶会话 id（本地持久化）。与 Qt 版 QSettings `sessions/pinned` 同语义：
+    /// 只在本机生效，不往引擎写——置顶是宿主的显示偏好，不是会话事实。
+    @Published var pinned: [String] = []
+    /// 搜索态：query 非空时列表数据来自 search_sessions 回执而非 sessions
+    @Published var searchQuery: String = ""
+    @Published var searchHits: [SessionInfo] = []
+    private var searchDebounceTask: Task<Void, Never>?
+    private static let pinnedKey = "flare.mac.pinned"
+
     /// 客户端版本：来自 Info.plist 的 CFBundleShortVersionString（编译期常量），
     /// 与运行时 `version` 帧的内核版本是两个不同来源，状态栏不得合并成一个数字。
     var clientVersion: String {
@@ -127,6 +136,7 @@ final class Engine: ObservableObject {
         status = .starting
         statusText = "正在启动引擎…"
 
+        pinned = UserDefaults.standard.stringArray(forKey: Self.pinnedKey) ?? []
         send(["type": "version"])
         // 侧栏首屏用 recent_sessions 而不是 list_sessions：只有它带 preview 字段
         // （internal/host/protocol.go 的 RecentSessionInfo，Preview 取首条用户消息），
@@ -205,7 +215,60 @@ final class Engine: ObservableObject {
     }
 
     func loadSessions() { showingArchived = false; send(["type": "recent_sessions"]) }
-    func loadArchived() { showingArchived = true; send(["type": "archived_sessions"]) }
+    /// 回收站/归档视图：与 Qt archivedSessions() 同口径，发 list_archived_sessions，
+    /// 回执是 archived_sessions。（recent_sessions 不认 archived 参数，别用它取归档。）
+    func loadArchived() { showingArchived = true; send(["type": "list_archived_sessions"]) }
+
+    // MARK: - 置顶（本地持久化，对齐 Qt pinnedSettings）
+
+    func isPinned(_ id: String) -> Bool { !id.isEmpty && pinned.contains(id) }
+
+    func togglePin(_ id: String) {
+        guard !id.isEmpty else { return }
+        if let i = pinned.firstIndex(of: id) {
+            pinned.remove(at: i)
+        } else {
+            pinned.append(id)
+        }
+        UserDefaults.standard.set(pinned, forKey: Self.pinnedKey)
+    }
+
+    // MARK: - 归档 / 清空 / 搜索
+
+    func archiveSession(_ id: String) {
+        guard !id.isEmpty else { return }
+        // 「移入回收站」= end_session（软删，可在回收站恢复）；与 Qt deleteCurrent 同口径
+        send(["type": "end_session", "sessionId": id])
+        send(["type": "recent_sessions"])
+    }
+
+    func restoreSession(_ id: String) {
+        guard !id.isEmpty else { return }
+        send(["type": "restore_session", "sessionId": id])
+        send(["type": "list_archived_sessions"])
+    }
+
+    func clearMessages(_ id: String) {
+        guard !id.isEmpty else { return }
+        send(["type": "clear_session", "sessionId": id])
+    }
+
+    /// 250ms 防抖（对齐 Qt M7-2）。空关键词立刻回到当前视图自己的列表帧。
+    func runSearch(_ raw: String) {
+        let q = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        searchQuery = q
+        searchDebounceTask?.cancel()
+        if q.isEmpty {
+            searchHits = []
+            send(showingArchived ? ["type": "list_archived_sessions"] : ["type": "recent_sessions"])
+            return
+        }
+        searchDebounceTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard !Task.isCancelled, let self else { return }
+            self.send(["type": "search_sessions", "query": q, "archived": self.showingArchived])
+        }
+    }
     func loadModels() { send(["type": "models"]) }
     func loadMemories() { send(["type": "list_memories"]) }
     func loadTools() { send(["type": "tools"]) }
@@ -363,13 +426,23 @@ final class Engine: ObservableObject {
             usageText = Self.parseUsage(obj)
 
         case "recent_sessions":
-            // 与 sessions 同构（id/title/updatedAt/preview），只是多了预览、少了 archive 标记
-            sessions = Self.parseSessions(obj)
-            showingArchived = false
+            // 与 sessions 同构（id/title/updatedAt/preview）。
+            // 归档视图的列表走 archived_sessions，这一帧只属于主列表：
+            // 切到回收站后迟到的 recent_sessions 必须丢弃，否则会把归档列表顶成活跃会话。
+            if !showingArchived {
+                sessions = Self.parseSessions(obj)
+            }
 
         case "archived_sessions":
+            // 不在回执里改 showingArchived：晚到的归档回执会把用户刚切回的主视图拽走。
             archivedSessions = Self.parseSessions(obj)
-            showingArchived = true
+
+        case "search_sessions":
+            // 迟到回执必须丢弃：快速改词时先发的那次查询可能后到，
+            // 直接应用会把列表顶成上一个关键词的结果，而搜索框写着新词。
+            let echoed = ((obj["query"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard echoed == searchQuery else { break }
+            searchHits = Self.parseSessions(obj)
 
         case "models":
             if let cfg = obj["configured"] as? [String: Any],
@@ -431,7 +504,9 @@ final class Engine: ObservableObject {
             let title = (d["title"] as? String) ?? (d["name"] as? String) ?? "未命名会话"
             let upd = (d["updatedAt"] as? String) ?? (d["updated_at"] as? String) ?? ""
             let prev = (d["preview"] as? String) ?? ""
-            return SessionInfo(id: id, title: title.isEmpty ? "未命名会话" : title, updatedAt: upd, preview: prev)
+            let cnt = (d["messageCount"] as? Int) ?? (d["message_count"] as? Int) ?? 0
+            return SessionInfo(id: id, title: title.isEmpty ? "未命名会话" : title,
+                               updatedAt: upd, preview: prev, messageCount: cnt)
         }
     }
 

@@ -148,6 +148,23 @@ enum ShotKit {
                     if let main = NSApp.windows.first(where: { $0.isVisible && $0.contentView != nil }) {
                         save(main, out, "01b-main-after")
                     }
+                    // 附加场景（搜索态 / 归档箱）：仅自动化验证用，普通启动不触发
+                    if ProcessInfo.processInfo.environment["FLARE_GUI_EXTRA"] != nil {
+                        engine.runSearch("WARP")
+                        try? await Task.sleep(nanoseconds: 1_500_000_000)
+                        if let main = NSApp.windows.first(where: { $0.isVisible && $0.contentView != nil }) {
+                            save(main, out, "08-search")
+                        }
+                        engine.runSearch("")
+                        try? await Task.sleep(nanoseconds: 600_000_000)
+                        engine.loadArchived()
+                        try? await Task.sleep(nanoseconds: 1_500_000_000)
+                        if let main = NSApp.windows.first(where: { $0.isVisible && $0.contentView != nil }) {
+                            save(main, out, "09-archived")
+                        }
+                        engine.loadSessions()
+                        try? await Task.sleep(nanoseconds: 600_000_000)
+                    }
                     if ProcessInfo.processInfo.environment["FLARE_GUI_SHOT_QUIT"] != nil {
                         // 留时间给 06/07 收尾：Go 引擎的 cancel 要等 HTTP 流的分块边界才生效，
                         // 实测最长约 21s 才回 cancelled 帧
