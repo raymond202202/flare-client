@@ -36,7 +36,12 @@ jobs:
           } elseif ("${{ github.ref_type }}" -eq "tag") {
             $v = "${{ github.ref_name }}" -replace '^v',''
           } else {
-            $v = "0.0.0-dev." + "${{ github.sha }}".Substring(0,7)
+            # dev 构建：版本主体从 CMakeLists.txt 的 project(flare-client VERSION …) 取，
+            # 与 Fedora 客户端同源。否则 WPF 的 AssemblyVersion 会退化成 0.0.0.0，
+            # 侧栏显示「Flare v0.0.0」，属性页与安装包也都是假版本号。
+            $m = Select-String -Path 'CMakeLists.txt' -Pattern 'project\(flare-client VERSION ([0-9]+\.[0-9]+\.[0-9]+)' | Select-Object -First 1
+            if ($m) { $base = $m.Matches[0].Groups[1].Value } else { $base = '0.0.0' }
+            $v = "$base-dev." + "${{ github.sha }}".Substring(0,7)
           }
           # AssemblyVersion / FileVersion / NSIS VIProductVersion 只认纯数字段，
           # 传 0.0.0-dev.xxxx 会撞 MC1005 Invalid AssemblyVersion。显示版本留完整串，

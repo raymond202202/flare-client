@@ -35,7 +35,12 @@ jobs:
           elif [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             V="${GITHUB_REF_NAME#v}"
           else
-            V="0.0.0-dev.${GITHUB_SHA::7}"
+            # dev 构建：版本主体从 CMakeLists.txt 的 project(flare-client VERSION …) 取，
+            # 与 Fedora 客户端同源。否则 Info.plist 的 CFBundleShortVersionString 变成 0.0.0，
+            # 关于窗口与 DMG 文件名都是假版本号。
+            BASE=$(sed -n 's/^project(flare-client VERSION \([0-9][0-9.]*\).*/\1/p' CMakeLists.txt | head -1)
+            [ -z "$BASE" ] && BASE="0.0.0"
+            V="${BASE}-dev.${GITHUB_SHA::7}"
           fi
           echo "version=$V" >> "$GITHUB_OUTPUT"
           echo "VERSION=$V"
