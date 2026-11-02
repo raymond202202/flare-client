@@ -130,6 +130,26 @@ jobs:
           Copy-Item "native/windows/README-WINDOWS.txt" "$pkg/README.txt"
           Get-ChildItem -Recurse $pkg | Select-Object FullName, Length | Format-Table -AutoSize
 
+      # runner 是 Windows Server，字体比桌面版 Windows 精简。emoji 画不出来
+      # 到底是「字体文件压根不在」还是「字体在但 WPF 没选中」，得先有事实。
+      - name: 字体诊断
+        shell: powershell
+        run: |
+          "seguiemj.ttf : $(Test-Path C:\Windows\Fonts\seguiemj.ttf)"
+          "seguisym.ttf : $(Test-Path C:\Windows\Fonts\seguisym.ttf)"
+          "msyh.ttc     : $(Test-Path C:\Windows\Fonts\msyh.ttc)"
+          Add-Type -AssemblyName PresentationCore
+          $fams = [System.Windows.Media.Fonts]::SystemFontFamilies | ForEach-Object { $_.Source }
+          "字体族总数 : $($fams.Count)"
+          "--- 相关字体族 ---"
+          $fams | Where-Object { $_ -match 'Emoji|Symbol|YaHei|Segoe' }
+          "--- composite 解析测试 ---"
+          $ff = New-Object System.Windows.Media.FontFamily("Segoe UI Emoji, Segoe UI, Microsoft YaHei UI")
+          "FamilyNames : $($ff.FamilyNames.Values -join '|')"
+          $tf = New-Object System.Windows.Media.Typeface($ff, [System.Windows.FontStyles]::Normal, [System.Windows.FontWeights]::Normal, [System.Windows.FontStretches]::Normal)
+          "TryGetGlyphTypeface : $($tf.TryGetGlyphTypeface([ref]$gt))"
+          if ($gt) { "解析到字体文件 : $($gt.FontUri)" }
+
       # 无人值守 GUI 取证：跑真实的 exe，把「只能看像素」的东西落成图片 ——
       # 菜单 emoji 到底画没画出来、置顶行的 📌 有没有缺字形、搜索高亮是不是琥珀色，
       # 这些都不是编译器能回答的问题，必须看图。WPF 走 RenderTargetBitmap
