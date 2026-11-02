@@ -513,7 +513,15 @@ namespace FlareWin
             // 统一挪到 Shot() 里，在渲染前一刻补选，见 EnsureDemoSelection()。
 
             // 启动 3.5s 后：01-main
-            Delay(3500, () => Shot("01-main"));
+            Delay(3500, () =>
+            {
+                // 截图前把关键视觉属性打到 gui.log：CI 上只看 PNG 会有「整块橙色」
+                // 这类现象说不清来源（是 Border 的 BorderBrush 铺满了？还是别的元素
+                // 盖在上面？），把每个 Border/TextBox 的坐标 + Background/BorderBrush
+                // 直接印出来，比猜像素可靠得多。
+                try { DumpLayout(this, 0); } catch (Exception ex) { LogShot("dump: " + ex.Message); }
+                Shot("01-main");
+            });
 
             // FLARE_GUI_SEARCH=Go → 01-main 拍完再灌关键词，等防抖 + 回执 + 重排都落定
             // 之后补一张 02-search。这张专门用来验两件事：搜索态下**没有**分组标题，
@@ -779,6 +787,67 @@ namespace FlareWin
             catch
             {
             }
+        }
+
+        // 把可视树上带名字的元素（以及所有 Border/TextBox）的坐标 + 画刷打到日志。
+        // 只为 CI 取证，正常运行时 FLARE_GUI_LOG 未设，LogShot 直接返回。
+        private static void DumpLayout(DependencyObject root, int depth)
+        {
+            if (root == null || depth > 7) return;
+            try
+            {
+                var fe = root as FrameworkElement;
+                var bd = root as Border;
+                var tx = root as TextBox;
+                var ctl = root as System.Windows.Controls.Control;
+                if (bd != null || tx != null || (fe != null && !string.IsNullOrEmpty(fe.Name)))
+                {
+                    var sb = new StringBuilder();
+                    sb.Append(' ', depth).Append(root.GetType().Name);
+                    if (fe != null && !string.IsNullOrEmpty(fe.Name)) sb.Append('#').Append(fe.Name);
+                    if (fe != null)
+                    {
+                        try
+                        {
+                            var win = Window.GetWindow(fe);
+                            if (win != null && !ReferenceEquals(win, fe))
+                            {
+                                var p = fe.TransformToAncestor(win).Transform(new Point(0, 0));
+                                sb.AppendFormat(" @{0:0},{1:0} {2:0}x{3:0}", p.X, p.Y, fe.ActualWidth, fe.ActualHeight);
+                            }
+                            else
+                            {
+                                sb.AppendFormat(" {0:0}x{1:0}", fe.ActualWidth, fe.ActualHeight);
+                            }
+                        }
+                        catch
+                        {
+                            sb.Append(" (no-xform)");
+                        }
+                    }
+                    sb.Append(" vis=").Append(fe != null ? fe.Visibility.ToString() : "?");
+                    if (bd != null)
+                        sb.Append(" bg=").Append(BrushName(bd.Background)).Append(" br=").Append(BrushName(bd.BorderBrush))
+                          .Append(" bt=").Append(bd.BorderThickness);
+                    if (ctl != null)
+                        sb.Append(" ctlBg=").Append(BrushName(ctl.Background)).Append(" ctlBr=").Append(BrushName(ctl.BorderBrush))
+                          .Append(" ctlBt=").Append(ctl.BorderThickness);
+                    LogShot(sb.ToString());
+                }
+                int n = VisualTreeHelper.GetChildrenCount(root);
+                for (int i = 0; i < n; i++) DumpLayout(VisualTreeHelper.GetChild(root, i), depth + 1);
+            }
+            catch
+            {
+            }
+        }
+
+        private static string BrushName(Brush b)
+        {
+            if (b == null) return "null";
+            var s = b as SolidColorBrush;
+            if (s != null) return "#" + s.Color.A.ToString("X2") + s.Color.R.ToString("X2") + s.Color.G.ToString("X2") + s.Color.B.ToString("X2");
+            return b.GetType().Name;
         }
     }
 }
