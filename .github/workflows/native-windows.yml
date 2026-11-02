@@ -50,9 +50,12 @@ jobs:
           $dir = "$env:USERPROFILE\.ssh"
           New-Item -ItemType Directory -Force -Path $dir | Out-Null
           ssh-keyscan -t ed25519 github.com 2>$null | Out-File -Append -Encoding ascii "$dir\known_hosts"
-          $key = "$env:ENGINE_SSH_KEY" -replace "`r",""
+          # 去掉 CRLF：OpenSSH 只认 LF，且私钥文件必须以换行结尾，否则报
+          # 'Load key ...: invalid format'（Windows runner 上踩过）
+          $key = ($env:ENGINE_SSH_KEY -replace "`r","").TrimEnd("`n") + "`n"
           # 用 OpenSSH 而非 putty：写文件后靠 GIT_SSH_COMMAND 指定，避免 agent 平台差异
-          Set-Content -Path "$dir\engine_key" -Value $key -NoNewline
+          # WriteAllText：不经 Set-Content 的编码/BOM 推断，保证字节级干净
+          [System.IO.File]::WriteAllText("$dir\engine_key", $key)
           icacls "$dir\engine_key" /inheritance:r /grant:r "${env:USERNAME}:R" | Out-Null
           git config --global core.sshCommand "ssh -i `"$dir/engine_key`" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
           git clone --depth 1 git@github.com:raymond202202/flare.git engine

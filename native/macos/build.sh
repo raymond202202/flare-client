@@ -33,12 +33,12 @@ fi
 
 ARCH="$(uname -m)"
 TARGET="$ARCH-apple-macos13.0"
-echo "==> 编译 Swift 源码（target=$TARGET）"
+echo "==> 编译 Swift 源码（target=${TARGET}）"
 swiftc -O -parse-as-library -target "$TARGET" \
     -o "$BUNDLE/Contents/MacOS/$APP_NAME" \
     Sources/*.swift
 
-echo "==> 写入 Info.plist（版本 $VERSION）"
+echo "==> 写入 Info.plist（版本 ${VERSION}）"
 cp Info.plist "$BUNDLE/Contents/Info.plist"
 sed -i '' "s/__VERSION__/$VERSION/g" "$BUNDLE/Contents/Info.plist"
 
@@ -90,7 +90,7 @@ TXT
     hdiutil create -volname "$APP_NAME $VERSION" -srcfolder "$STAGE" \
         -ov -format UDZO "$DMG" >/dev/null
     rm -rf "$STAGE"
-    echo "==> DMG：$DMG（$(du -h "$DMG" | cut -f1)）"
+    echo "==> DMG：${DMG}（$(du -h "$DMG" | cut -f1)）"
 fi
 
 echo "==> 完成：$BUNDLE"
