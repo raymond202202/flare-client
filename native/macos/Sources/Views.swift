@@ -699,11 +699,14 @@ struct StatusBarView: View {
 func highlighted(_ text: String, keyword: String, selected: Bool = false) -> AttributedString {
     var attr = AttributedString(text)
     let kw = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
-    if kw.isEmpty || selected { return attr }
+    if kw.isEmpty { return attr }
+    // 逐字对齐 Qt SearchHighlightDelegate：底色 yellow(#fbbf24)，选中行 alpha 165、常态 140；
+    // 命中字色统一 dark(#b45309)。Qt 在选中态同样高亮，这里不能因为 selected 就跳过。
+    let bg = Theme.yellow.opacity(selected ? 165.0 / 255.0 : 140.0 / 255.0)
     var from = attr.startIndex
     while from < attr.endIndex,
           let r = attr[from...].range(of: kw, options: .caseInsensitive) {
-        attr[r].backgroundColor = Theme.yellow
+        attr[r].backgroundColor = bg
         attr[r].foregroundColor = Theme.dark
         from = r.upperBound
         if from >= attr.endIndex { break }
