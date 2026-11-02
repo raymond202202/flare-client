@@ -513,6 +513,18 @@ namespace FlareWin
             if (!string.IsNullOrEmpty(menuId))
                 Delay(3600, () => OpenMenuShot(menuId));
 
+            // FLARE_GUI_SHOT_QUIT=1：取证序列跑完自动退出，让 CI 能无人值守跑完这一步。
+            // 取最晚一次截图（02-search = 4200+1500ms）之后再留足余量，
+            // 免得跟 Shot() 抢渲染；CI 侧仍保留超时强杀兜底。
+            if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("FLARE_GUI_SHOT_QUIT")))
+            {
+                Delay(15000, () =>
+                {
+                    LogShot("shot-quit");
+                    try { Application.Current.Shutdown(); } catch { }
+                });
+            }
+
             var smoke = Environment.GetEnvironmentVariable("FLARE_GUI_SMOKE");
             if (string.IsNullOrEmpty(smoke)) return;
 

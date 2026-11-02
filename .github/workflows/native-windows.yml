@@ -130,6 +130,39 @@ jobs:
           Copy-Item "native/windows/README-WINDOWS.txt" "$pkg/README.txt"
           Get-ChildItem -Recurse $pkg | Select-Object FullName, Length | Format-Table -AutoSize
 
+      # 无人值守 GUI 取证：跑真实的 exe，把「只能看像素」的东西落成图片 ——
+      # 菜单 emoji 到底画没画出来、置顶行的 📌 有没有缺字形、搜索高亮是不是琥珀色，
+      # 这些都不是编译器能回答的问题，必须看图。WPF 走 RenderTargetBitmap
+      # 自渲染，不依赖 runner 有没有显示器 / 会不会锁屏。
+      - name: GUI 自截图取证
+        shell: pwsh
+        run: |
+          $pkg = "native/windows/dist/pkg"
+          $shots = "native/windows/dist/shots"
+          New-Item -ItemType Directory -Force -Path $shots | Out-Null
+          $env:FLARE_GUI_DEMO      = "1"          # 无引擎数据时灌样本会话
+          $env:FLARE_GUI_DEMO_PIN  = "demo-2,demo-5"  # 造出「📌 置顶」组
+          $env:FLARE_GUI_MENU      = "demo-2"     # 右键菜单单独出图（emoji 主战场）
+          $env:FLARE_GUI_SEARCH    = "WARP"       # 搜索高亮
+          $env:FLARE_GUI_SHOT_QUIT = "1"
+          $env:FLARE_GUI_SHOT      = (Resolve-Path $shots).Path
+          $env:FLARE_BIN           = (Resolve-Path "$pkg/engine/flare.exe").Path
+          $exe = (Resolve-Path "$pkg/Flare.exe").Path
+          $p = Start-Process -FilePath $exe -PassThru
+          if (-not $p.WaitForExit(150000)) { $p.Kill(); Write-Warning "GUI 自截图超时，已强杀" }
+          $files = Get-ChildItem $shots -Filter *.png -ErrorAction SilentlyContinue
+          if (-not $files) { throw "GUI 自截图未产出任何 png" }
+          $files | Select-Object Name, Length | Format-Table -AutoSize
+
+      - name: 上传 GUI 截图
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: flare-windows-shots-${{ steps.v.outputs.version }}
+          path: native/windows/dist/shots/*.png
+          if-no-files-found: warn
+          retention-days: 30
+
       - name: NSIS 打包
         shell: pwsh
         run: |

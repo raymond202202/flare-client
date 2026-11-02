@@ -98,8 +98,12 @@
              Qt appendSectionHeader，扫读时能一眼和会话名分开。
              与会话行互斥显示：同一份模板两套内容，省掉 TemplateSelector 和
              两套 ItemContainerStyle 带来的选中/虚拟化分叉。 -->
+        <!-- FontFamily 必须显式指向 Theme.FontEmojiFamily：分组标题里会出现「📌 置顶」，
+             而 Window 级的 Segoe UI 不含 emoji 字形、WPF 也不会自动链路到
+             Segoe UI Emoji，结果就是 📌 只占宽度不画字形（看着像凭空缺个图标）。 -->
         <TextBlock x:Name="SectionLine" Text="{Binding HeaderText}" Visibility="Collapsed"
                    FontSize="{x:Static local:Theme.FontSection}" FontWeight="Bold"
+                   FontFamily="{x:Static local:Theme.FontEmojiFamily}"
                    Foreground="{x:Static local:Theme.TextSection}"
                    VerticalAlignment="Bottom" Margin="2,0,0,0" />
 
@@ -117,6 +121,7 @@
           <TextBlock Grid.Column="0" Text="{Binding ListText}"
                      TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"
                      FontSize="{x:Static local:Theme.FontList}"
+                     FontFamily="{x:Static local:Theme.FontEmojiFamily}"
                      VerticalAlignment="Center">
             <TextBlock.Style>
               <Style TargetType="TextBlock">
@@ -365,8 +370,10 @@
             <StackPanel Grid.Column="0" Orientation="Horizontal">
               <Border x:Name="StatusDot" Width="7" Height="7" CornerRadius="4"
                       Background="{x:Static local:Theme.TextFaint}" VerticalAlignment="Center" />
+              <!-- 状态栏会写「已移入回收站，可在「🗑️ 回收站」里恢复」，同样要 emoji 回退链。 -->
               <TextBlock x:Name="StatusLabel" Text="未启动" Margin="6,0,0,0"
                          FontSize="{x:Static local:Theme.FontFootnote}"
+                         FontFamily="{x:Static local:Theme.FontEmojiFamily}"
                          Foreground="{x:Static local:Theme.TextMuted}" VerticalAlignment="Center" />
             </StackPanel>
             <TextBlock Grid.Column="2" x:Name="RightStatus" Text=""

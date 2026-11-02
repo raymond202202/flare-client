@@ -1042,6 +1042,9 @@ namespace FlareWin
                 });
             };
             // 今天 → HH:mm；今年 → MM-dd HH:mm；跨年 → yy-MM-dd HH:mm
+            // 搜索取证专用样本：FLARE_GUI_SEARCH 按标题过滤，样本里一条都不含关键词时
+            // 整片列表会被滤空，「搜索高亮到底画没画出来」这一项就等于没验。
+            add("demo-7", "排查 WARP 分流不生效", now.AddHours(-1));
             add("demo-1", "帮我把这段 Go 的并发逻辑改成带超时控制的写法", now.AddMinutes(-8));
             add("demo-2", "灵感稍纵即逝——怎么设计一个不打断思路的速记入口", now.AddHours(-3));
             // 昨天 / 最近 7 天这两组必须各有样本，否则分组标题压根不进画面，
