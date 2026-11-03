@@ -298,6 +298,20 @@ jobs:
           go-version-file: engine/go.mod
           cache-dependency-path: engine/go.sum
 
+      # 引擎硬依赖 bcryptprimitives.dll（Win10 1607+ 独有），Win7 一启动就
+      # throw "bcryptprimitives.dll not found"。补丁把该 DLL 缺失时的路径改走
+      # advapi32!SystemFunction036（RtlGenRandom，XP 起就有），Win10+ 行为不变。
+      # 只改 GOROOT 源码即可：go build 会按需重编 runtime，无需重建工具链。
+      - name: 引擎打 Win7 兼容补丁（GOROOT runtime）
+        shell: pwsh
+        run: |
+          $goroot = (go env GOROOT).Trim()
+          Write-Host "GOROOT = $goroot"
+          python engine/tools/patch-goroot-win7.py $goroot
+          if ($LASTEXITCODE -ne 0) { throw "GOROOT 补丁失败：引擎仓库缺 tools/patch-goroot-win7.py，或 Go 版本变了补丁锚点失效" }
+          python engine/tools/patch-goroot-win7.py --check $goroot
+          if ($LASTEXITCODE -ne 0) { throw "GOROOT 补丁自检未通过" }
+
       - name: 编译引擎（windows/amd64）
         shell: pwsh
         run: |
@@ -305,6 +319,9 @@ jobs:
           $env:CGO_ENABLED = "0"
           $env:GOOS = "windows"
           $env:GOARCH = "amd64"
+          # GOTOOLCHAIN=local：否则 go.mod 里的版本号可能触发下载另一套工具链，
+          # 绕过我们刚打过补丁的 GOROOT
+          $env:GOTOOLCHAIN = "local"
           # GOAMD64=v1：Win7 时代的 CPU 多为不支持的 AVX2 老型号，v2/v3 会直接 illegal instruction
           $env:GOAMD64 = "v1"
           go build -trimpath -ldflags "-s -w" -o "../native/windows/engine/flare.exe" ./cmd/flare
@@ -312,18 +329,24 @@ jobs:
           Pop-Location
           & ./native/windows/engine/flare.exe --version
 
-      # 静态导入表只有 kernel32.dll 才敢说「Win7 能跑」：Go 的 bcrypt.dll / ws2_32.dll
-      # 全是延迟加载，缺了不会在启动时炸。这里把事实打印出来留档。
-      - name: 引擎 PE 依赖取证
+      # 打过 Win7 补丁的引擎取证：断言「回退路径在」且「致命 throw 已消失」。
+      # 之前这里是反的（断言不能含 bcryptprimitives.dll），既然已经主动保留
+      # Win10+ 走 ProcessPrng 的路径，那个断言必然失败 —— 失败原因在守卫本身。
+      - name: 引擎 PE 依赖取证（Win7 兼容）
         shell: pwsh
         run: |
           $b = [System.IO.File]::ReadAllBytes("native/windows/engine/flare.exe")
           $txt = [System.Text.Encoding]::ASCII.GetString($b)
-          foreach ($m in @('bcryptprimitives.dll','ProcessPrng','bcrypt.dll','kernel32.dll')) {
-            $hit = $txt.Contains($m)
-            Write-Host ("{0,-22} : {1}" -f $m, $hit)
+          foreach ($m in @('SystemFunction036','advapi32.dll','ProcessPrng','bcryptprimitives.dll','bcryptprimitives.dll not found','kernel32.dll')) {
+            Write-Host ("{0,-32} : {1}" -f $m, $txt.Contains($m))
           }
-          if ($txt.Contains('bcryptprimitives.dll')) { throw "引擎硬依赖 bcryptprimitives.dll（Win8+ 独有），Win7 无法运行" }
+          if (-not $txt.Contains('SystemFunction036')) {
+            throw "引擎未打 Win7 兼容补丁：二进制里找不到 advapi32!SystemFunction036 回退路径"
+          }
+          if ($txt.Contains('bcryptprimitives.dll not found')) {
+            throw "引擎仍保留 throw(bcryptprimitives.dll not found)：Win7 一启动就崩"
+          }
+          Write-Host "OK: 含 Win7 回退路径（advapi32!SystemFunction036）；Win10+ 仍走 bcryptprimitives!ProcessPrng"
 
       # ---------- 客户端（WPF / net6.0-windows 自包含） ----------
       - uses: actions/setup-dotnet@v4
