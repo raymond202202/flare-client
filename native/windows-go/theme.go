@@ -1,4 +1,14 @@
-// theme.go —— 浅色白底紫配（#6D4AFF），与 Fedora Qt 版保持一致
+// theme.go —— 火焰主题（flame theme）
+//
+// 色值全部取自 Fedora Qt 版 src/flametheme.h（Qt 版是你的样板，Win32 版跟随它，
+// 不自己发明颜色）：
+//
+//	FLAME_TOKENS: red #ef4444 / orange #f97316 / amber #f59e0b
+//	              / yellow #fbbf24 / dark #b45309
+//	火焰主行动色 = orange #f97316；底色系 = 米白 #fffbf0 / 浅琥珀 #fff3d6
+//
+// 历史教训：本文件一度被写成白底 + 紫 #6D4AFF（那是另一个项目的配色），
+// 与 flare 的火焰视觉规范完全不符。改配色前先看 flametheme.h，不要凭印象。
 package main
 
 import (
@@ -8,24 +18,28 @@ import (
 
 // 颜色（COLORREF = 0x00BBGGRR，用 mkColor 构造）
 var (
-	colBg        = mkColor(0xFA, 0xFA, 0xFC) // 窗口底色
-	colSurface   = mkColor(0xFF, 0xFF, 0xFF) // 卡片/主区
-	colSidebar   = mkColor(0xF5, 0xF4, 0xFA) // 侧栏
-	colSidebarHi = mkColor(0xFF, 0xFF, 0xFF) // 侧栏选中项
-	colBorder    = mkColor(0xE9, 0xE7, 0xF2) // 分隔线
-	colPrimary   = mkColor(0x6D, 0x4A, 0xFF) // 主色
-	colPrimaryDk = mkColor(0x5A, 0x38, 0xE0) // 主色按下
-	colPrimaryBg = mkColor(0xEF, 0xEB, 0xFF) // 主色浅底
-	colText      = mkColor(0x1F, 0x1F, 0x2E) // 主文本
-	colTextDim   = mkColor(0x6B, 0x6B, 0x80) // 次文本
-	colTextMute  = mkColor(0xA0, 0xA0, 0xB4) // 弱文本
-	colBubble    = mkColor(0xF4, 0xF3, 0xFA) // AI 气泡
-	colUserBg    = mkColor(0x6D, 0x4A, 0xFF) // 用户气泡
+	colBg        = mkColor(0xFF, 0xFB, 0xF0) // 窗口底色 —— bgSoft 米白
+	colSurface   = mkColor(0xFF, 0xFD, 0xF9) // 卡片/主区，兼作橙底上的白字
+	colSidebar   = mkColor(0xFF, 0xF3, 0xD6) // 侧栏 —— bgAlt 浅琥珀
+	colSidebarHi = mkColor(0xFF, 0xED, 0xD0) // 侧栏选中/悬停 —— hoverSoft
+	colBorder    = mkColor(0xFD, 0xE6, 0xBF) // 分隔线 —— borderSoft 浅橙
+	colPrimary   = mkColor(0xF9, 0x73, 0x16) // 主色 —— 火焰橙
+	colPrimaryDk = mkColor(0xE0, 0x63, 0x0F) // 主色按下 —— 深橙
+	colPrimaryBg = mkColor(0xFF, 0xED, 0xD0) // 主色浅底 —— hoverSoft
+	colText      = mkColor(0x4A, 0x2E, 0x0D) // 主文本 —— textMain 深琥珀
+	colTextDim   = mkColor(0x8A, 0x6A, 0x3B) // 次文本 —— textSoft
+	colTextMute  = mkColor(0x9A, 0x8F, 0x80) // 弱文本 —— 暖灰
+	colBubble    = mkColor(0xFF, 0xF7, 0xED) // AI 气泡 —— 极浅橙
+	colUserBg    = mkColor(0xF9, 0x73, 0x16) // 用户气泡 —— 火焰橙
 	colUserText  = mkColor(0xFF, 0xFF, 0xFF)
-	colHover     = mkColor(0xEE, 0xEC, 0xF8)
-	colDanger    = mkColor(0xE5, 0x48, 0x4D)
-	colScroll    = mkColor(0xD6, 0xD3, 0xE4)
+	colHover     = mkColor(0xFF, 0xED, 0xD0) // 悬停底 —— hoverSoft
+	colDanger    = mkColor(0xEF, 0x44, 0x44) // 危险/错误 —— 火焰核心红
+	colScroll    = mkColor(0xFD, 0xE6, 0xBF) // 滚动条 —— borderSoft
+	colAmber     = mkColor(0xF5, 0x9E, 0x0B) // amber 过渡色（备用）
+	colYellow    = mkColor(0xFB, 0xBF, 0x24) // yellow 亮黄（备用）
+	colFlameDark = mkColor(0xB4, 0x53, 0x09) // dark 暗琥珀（备用）
 )
+
 
 // 布局
 const (
