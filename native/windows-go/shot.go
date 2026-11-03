@@ -158,10 +158,12 @@ func saveWindowShot(hwnd syscall.Handle, path string) error {
 	pDeleteDC.Call(mem)
 
 	// 32bpp BGRA → 24bpp BGR，行按 4 字节对齐
+	// buf 是自上而下（GetDIBits 用了 -h），而 BMP 文件正高度 = 自下而上，
+	// 所以这里按倒序取源行，写出的 pix 才是标准 bottom-up 文件。
 	rowSize := ((int(w)*3 + 3) / 4) * 4
 	pix := make([]byte, rowSize*int(h))
 	for y := 0; y < int(h); y++ {
-		src := buf[y*stride:]
+		src := buf[(int(h)-1-y)*stride:]
 		dst := pix[y*rowSize:]
 		for x := 0; x < int(w); x++ {
 			dst[x*3+0] = src[x*4+0]
