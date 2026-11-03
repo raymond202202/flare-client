@@ -12,6 +12,7 @@ package main
 
 import (
 	"encoding/binary"
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -46,6 +47,20 @@ type bitmapInfoHeader struct {
 var shotPath string
 var shotDelay = time.Duration(shotDelayMs) * time.Millisecond
 
+// trace 把截图流程的里程碑追加到 <shotPath>.trace.txt。
+// 截图失败时没有别的可见输出（GUI 子系统无 stdout），只能靠落盘取证。
+func trace(msg string) {
+	if shotPath == "" {
+		return
+	}
+	f, err := os.OpenFile(shotPath+".trace.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	fmt.Fprintf(f, "%s %s\r\n", time.Now().Format("15:04:05.000"), msg)
+}
+
 // parseShotArg 解析 --shot=<文件> / --shot <文件> / --shot-delay=<毫秒>。
 func parseShotArg() {
 	args := os.Args[1:]
@@ -64,6 +79,12 @@ func parseShotArg() {
 		}
 	}
 	shotPath = strings.TrimSpace(shotPath)
+	// 诊断：截图模式先把收到的 argv 落到目标旁边，
+	// 用来区分「参数没传进来」和「截图本身失败」——wine/壳层转发都可能吞参数。
+	if shotPath != "" {
+		_ = os.WriteFile(shotPath+".arg.txt",
+			[]byte(strings.Join(os.Args, "\r\n")), 0o644)
+	}
 	if shotPath != "" {
 		// 相对路径落到 exe 同目录，避免工作目录不确定
 		if !strings.ContainsAny(shotPath, `:\/`) {
@@ -84,16 +105,21 @@ func armShot(hwnd syscall.Handle) {
 		return
 	}
 	go func() {
+		trace("armShot: 等待 " + shotDelay.String())
 		time.Sleep(shotDelay)
-		pPostMessageW.Call(uintptr(hwnd), wmShot, 0, 0)
+		r, _, e := pPostMessageW.Call(uintptr(hwnd), wmShot, 0, 0)
+		trace(fmt.Sprintf("armShot: PostMessage hwnd=%d ret=%d err=%v", hwnd, r, e))
 	}()
 }
 
 // takeShot 截图 → 关闭窗口 → 进程退出。
 func takeShot(hwnd syscall.Handle) {
+	trace(fmt.Sprintf("takeShot: 开始 hwnd=%d", hwnd))
 	if shotPath != "" {
-		if err := saveWindowShot(hwnd, shotPath); err == nil {
-			// 成功时不弹任何东西，静默退出即可
+		if err := saveWindowShot(hwnd, shotPath); err != nil {
+			trace("takeShot: saveWindowShot 失败 " + err.Error())
+		} else {
+			trace("takeShot: 截图已保存 " + shotPath)
 		}
 		writeFontReport(shotPath + ".font.txt")
 	}

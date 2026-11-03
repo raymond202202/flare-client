@@ -31,6 +31,9 @@ type AppState struct {
 
 	Busy      bool
 	Status    string
+	// EngineVersion 运行时由引擎 version 帧返回的引擎版本。
+	// 依 render-spec 3.1：与客户端版本来源不同，不得合并成一个数字。
+	EngineVersion string
 	ChatScroll int32
 	SideScroll int32
 
@@ -43,6 +46,11 @@ type AppState struct {
 }
 
 var (
+	// ClientVersion 客户端版本。构建时用 -X main.ClientVersion= 注入。
+	// 单一来源：flare-client/CMakeLists.txt 的 project(flare-client VERSION ...)。
+	// 未注入时显示 dev —— 宁可显示 dev，也不要产出看似正常的假版本号。
+	ClientVersion = "dev"
+
 	hwndMain  syscall.Handle
 	hEdit     syscall.Handle
 	oldEditProc uintptr
@@ -271,11 +279,18 @@ func drawAll(h syscall.Handle, hdc syscall.Handle) {
 	drawText(mh, "设置", RECT{rcGearBtn.Left + 26, rcGearBtn.Top, rcGearBtn.Right, rcGearBtn.Bottom},
 		fontUI, colTextDim, DT_LEFT|DT_VCENTER|DT_SINGLELINE)
 
-	// ---- 状态栏（左下角小字）----
-	statusR := RECT{int32(sidebarW) + pad, cr.Bottom - 20, cr.Right - pad, cr.Bottom}
+	// ---- 状态栏（render-spec 3.1：左消息 + 右版本链接常显）----
+	barL := int32(sidebarW) + pad
+	barR := cr.Right - pad
+	splitX := barL + (barR-barL)*52/100
 	if st.Status != "" {
-		drawText(mh, st.Status, statusR, fontSmall, colTextMute, DT_RIGHT|DT_VCENTER|DT_SINGLELINE)
+		statusR := RECT{barL, cr.Bottom - 20, splitX, cr.Bottom}
+		drawText(mh, st.Status, statusR, fontSmall, colTextMute,
+			DT_LEFT|DT_VCENTER|DT_SINGLELINE|DT_END_ELLIPSIS)
 	}
+	verR := RECT{splitX, cr.Bottom - 20, barR, cr.Bottom}
+	drawText(mh, versionLabel(), verR, fontSmall, colTextDim,
+		DT_RIGHT|DT_VCENTER|DT_SINGLELINE)
 
 	// 设置页叠加在主区之上（侧栏、标题栏保持可见）
 	if st.View == viewSetup {
@@ -286,6 +301,21 @@ func drawAll(h syscall.Handle, hdc syscall.Handle) {
 	pSelectObject.Call(mem, old)
 	pDeleteObject.Call(bmp)
 	pDeleteDC.Call(mem)
+}
+
+// versionLabel 状态栏右侧常显的版本链接。
+// 依 render-spec 3.1：客户端版本（编译期常量）与内核版本（运行时 version 帧）
+// 来源不同，不得合并成一个数字；内核版本未到达时显示占位，不显示 0.0.0。
+func versionLabel() string {
+	ev := st.EngineVersion
+	if ev == "" {
+		ev = "—"
+	}
+	cv := ClientVersion
+	if cv == "" {
+		cv = "dev"
+	}
+	return "客户端 v" + cv + " · 内核 flare " + ev
 }
 
 func drawMessages(hdc syscall.Handle, area RECT) {
@@ -367,7 +397,9 @@ func handleEngineEvents() {
 		switch t {
 		case "version":
 			if v, ok := m["engine"].(string); ok {
-				st.Status = "引擎 " + v
+				// 只存引擎版本，状态行留给连接/生成等消息，版本链接常显在右侧
+				st.EngineVersion = v
+				changed = true
 			}
 		case "sessions":
 			if arr, ok := m["sessions"].([]any); ok {
@@ -809,17 +841,21 @@ func main() {
 	pUpdateWindow.Call(uintptr(hwndMain))
 
 	// 启动引擎
+	trace("window: 即将启动引擎")
 	eng.hwnd = uintptr(hwndMain)
 	if err := eng.Start(); err != nil {
 		st.Status = "引擎启动失败：" + err.Error()
 	}
+	trace("window: 引擎 Start 返回")
 
 	// 首次使用还没有 API Key → 直接进设置页，不让用户面对一个不能说话的窗口
-	if readAPIKey() == "" {
+	// 截图模式例外：设置页是模态循环，会挡住下面的 armShot，导致永远截不到主界面
+	if readAPIKey() == "" && shotPath == "" {
 		openSetup()
 	}
 
 	// 截图模式下延迟取一张图再退出
+	trace("window: 即将 armShot")
 	armShot(hwndMain)
 
 	// 消息循环

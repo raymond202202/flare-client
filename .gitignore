@@ -26,7 +26,10 @@ packaging/*.exe
 packaging/dist/
 
 # 原生壳构建产物与内置引擎（二进制不入库）
-native/*/engine/
+# 注意：要整目录忽略（native/*/engine/）就没法用 ! 例外恢复里面的文件，
+# 所以这里忽略目录内容、保留目录本身，单独放行 VERSION（引擎版本号的权威来源）。
+native/*/engine/*
+!native/*/engine/VERSION
 native/*/build/
 
 # 本地打包时现编的引擎二进制（不入库，CI 各自现编）
