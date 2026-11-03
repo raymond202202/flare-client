@@ -572,6 +572,10 @@ func wndProc(h syscall.Handle, msg uint32, wp, lp uintptr) uintptr {
 		pInvalidateRect.Call(uintptr(h), 0, 0)
 		return 0
 
+	case wmShot:
+		takeShot(h)
+		return 0
+
 	case wmEngineEvent:
 		handleEngineEvents()
 		return 0
@@ -734,6 +738,9 @@ func relayoutChildren() {
 }
 
 func main() {
+	// 调试用自截图（Flare.exe --shot=<文件>），正常启动无副作用
+	parseShotArg()
+
 	// 高 DPI
 	pSetProcessDPIAware.Call()
 
@@ -811,6 +818,9 @@ func main() {
 	if readAPIKey() == "" {
 		openSetup()
 	}
+
+	// 截图模式下延迟取一张图再退出
+	armShot(hwndMain)
 
 	// 消息循环
 	var m MSG

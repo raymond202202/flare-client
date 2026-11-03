@@ -23,6 +23,7 @@ rm -rf "$OUT"; mkdir -p "$OUT/$NAME"
 
 install -m 0755 "$SRC/flare-x64.exe"   "$OUT/$NAME/Flare.exe"
 install -m 0755 "$SRC/flare-x86.exe"   "$OUT/$NAME/Flare-32bit.exe"
+install -m 0755 "$SRC/flare-arm64.exe" "$OUT/$NAME/Flare-ARM64.exe"
 
 cat > "$OUT/$NAME/README.txt" <<'EOF'
 Flare（Windows 版）
@@ -46,9 +47,11 @@ Flare（Windows 版）
    以后不用再填。想改：点左下角「设置」。
 
 
-四、32 位的老电脑
+四、32 位和 ARM 电脑
    如果你的电脑是 32 位系统（很老的机器），
    改用 Flare-32bit.exe，用法完全一样。
+   如果是 ARM 的 Windows（骁龙那类轻薄本），
+   用 Flare-ARM64.exe，用法也完全一样。
 
 
 五、支持哪些系统
