@@ -95,8 +95,21 @@ func takeShot(hwnd syscall.Handle) {
 		if err := saveWindowShot(hwnd, shotPath); err == nil {
 			// 成功时不弹任何东西，静默退出即可
 		}
+		writeFontReport(shotPath + ".font.txt")
 	}
 	pPostMessageW.Call(uintptr(hwnd), WM_CLOSE, 0, 0)
+}
+
+// writeFontReport 把字体探测结果写到截图旁边，方便在陌生机器（例如老 Win7）上
+// 直接看出界面到底用了哪个字体，不用装任何调试工具。
+func writeFontReport(path string) {
+	var b strings.Builder
+	b.WriteString("选中字体: " + chosenFont + "\r\n")
+	b.WriteString("探测过程:\r\n")
+	for _, l := range fontProbe {
+		b.WriteString("  " + l + "\r\n")
+	}
+	_ = os.WriteFile(path, []byte(b.String()), 0o644)
 }
 
 // saveWindowShot 用 BitBlt 抓窗口客户区，写成 24 位 BMP（兼容画图、飞书预览）。

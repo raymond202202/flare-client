@@ -91,6 +91,7 @@ var (
 	pGetTextExtentPoint32W = gdi32.NewProc("GetTextExtentPoint32W")
 	pGetStockObject     = gdi32.NewProc("GetStockObject")
 	pGetDeviceCaps      = gdi32.NewProc("GetDeviceCaps")
+	pGetTextFaceW       = gdi32.NewProc("GetTextFaceW")
 
 	// kernel32
 	pGetModuleHandleW = kernel32.NewProc("GetModuleHandleW")
