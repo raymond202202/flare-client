@@ -190,6 +190,33 @@ jobs:
           if (-not $files) { throw "GUI 自截图未产出任何 png" }
           $files | Select-Object Name, Length | Format-Table -AutoSize
 
+      # 峰值工作集采样：单独起一次实例，只测内存不出图，避免与上面的截图轮次
+      # 抢资源导致数字失真。net48 壳 vs net6 自包含壳在相同的 DEMO 数据集下对比。
+      - name: 内存采样（标准版 / WPF net48）
+        shell: pwsh
+        run: |
+          $pkg   = "native/windows/dist/pkg"
+          $shots = "native/windows/dist/shots"
+          $env:FLARE_GUI_DEMO      = "1"
+          $env:FLARE_GUI_DEMO_PIN  = "demo-2,demo-5"
+          $env:FLARE_GUI_SHOT_QUIT = "1"
+          $env:FLARE_GUI_SHOT      = (Resolve-Path $shots).Path
+          $env:FLARE_GUI_LOG       = Join-Path (Resolve-Path $shots).Path "gui-mem.log"
+          $env:FLARE_BIN           = (Resolve-Path "$pkg/engine/flare.exe").Path
+          $exe = (Resolve-Path "$pkg/Flare.exe").Path
+          $p = Start-Process -FilePath $exe -PassThru
+          $peak = 0; $n = 0
+          for ($i = 0; $i -lt 240; $i++) {
+            Start-Sleep -Milliseconds 250
+            if ($p.HasExited) { break }
+            try { $p.Refresh(); if ($p.WorkingSet64 -gt $peak) { $peak = $p.WorkingSet64 }; $n++ } catch { break }
+          }
+          if (-not $p.HasExited) { $p.Kill() }
+          $mib = [math]::Round($peak / 1MB, 1)
+          Write-Host "MEMORY standard(net48) peak working set = $mib MiB (samples=$n)"
+          if ($n -eq 0) { throw "标准版内存采样失败：GUI 未存活，可能一启动就崩" }
+          "standard(net48)             peak=$mib MiB  samples=$n" | Out-File -Append -Encoding utf8 native/windows/dist/memory.txt
+
       - name: 上传 GUI 截图
         uses: actions/upload-artifact@v4
         if: always()
@@ -393,6 +420,51 @@ jobs:
           Copy-Item "native/windows/README-WIN7.txt" "$pkg/README.txt"
           $sz = (Get-ChildItem -Recurse $pkg | Measure-Object -Property Length -Sum).Sum
           Write-Host ("解包后体积: {0:N1} MB / {1} 个文件" -f ($sz/1MB), (Get-ChildItem -Recurse -File $pkg).Count)
+
+      # 兼容版壳（net6.0-windows 自包含）此前从未被真正启动过：标准版能跑不代表
+      # 它能跑，自包含布局 / PresentationFramework 加载 / UCRT 都是另一条路径。
+      # 这一步起真进程、断言活过采样周期、断言出图，同时采峰值工作集做内存对比。
+      - name: GUI 冒烟 + 内存采样（兼容版）
+        shell: pwsh
+        run: |
+          $pkg   = "native/windows/dist/compat-pkg"
+          $shots = "native/windows/dist/shots-compat"
+          New-Item -ItemType Directory -Force -Path $shots | Out-Null
+          $env:FLARE_GUI_DEMO      = "1"
+          $env:FLARE_GUI_DEMO_PIN  = "demo-2,demo-5"
+          $env:FLARE_GUI_SHOT_QUIT = "1"
+          $env:FLARE_GUI_SHOT      = (Resolve-Path $shots).Path
+          $env:FLARE_GUI_LOG       = Join-Path (Resolve-Path $shots).Path "gui.log"
+          $env:FLARE_BIN           = (Resolve-Path "$pkg/engine/flare.exe").Path
+          $exe = (Resolve-Path "$pkg/Flare.exe").Path
+          $p = Start-Process -FilePath $exe -PassThru
+          $peak = 0; $n = 0; $code = $null
+          for ($i = 0; $i -lt 240; $i++) {
+            Start-Sleep -Milliseconds 250
+            if ($p.HasExited) { $code = $p.ExitCode; break }
+            try { $p.Refresh(); if ($p.WorkingSet64 -gt $peak) { $peak = $p.WorkingSet64 }; $n++ } catch { break }
+          }
+          if (-not $p.HasExited) { $p.Kill(); $code = "killed-timeout" }
+          $png = @(Get-ChildItem $shots -Filter *.png -ErrorAction SilentlyContinue)
+          if (Test-Path $env:FLARE_GUI_LOG) {
+            Write-Host "== compat gui.log (last 30) =="
+            Get-Content -Encoding UTF8 $env:FLARE_GUI_LOG | Select-Object -Last 30
+          }
+          $mib = [math]::Round($peak / 1MB, 1)
+          Write-Host "MEMORY compat(net6 self-contained) peak working set = $mib MiB (samples=$n, png=$($png.Count), exit=$code)"
+          if ($n -eq 0) { throw "兼容版 GUI 未存活过任何采样周期：一启动就崩（自包含壳在本环境不可用）" }
+          if ($png.Count -eq 0) { throw "兼容版 GUI 未产出任何 png：进程活着但渲染失败" }
+          "compat(net6 self-contained) peak=$mib MiB  samples=$n  png=$($png.Count)  exit=$code" | Out-File -Append -Encoding utf8 native/windows/dist/memory.txt
+          $png | Select-Object Name, Length | Format-Table -AutoSize
+
+      - name: 上传兼容版 GUI 截图
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: flare-windows-shots-compat-${{ steps.v.outputs.version }}
+          path: native/windows/dist/shots-compat/*
+          if-no-files-found: warn
+          retention-days: 30
 
       - name: NSIS 打包（兼容版）
         shell: pwsh
