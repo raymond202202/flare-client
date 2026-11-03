@@ -104,6 +104,7 @@ jobs:
             /restore `
             /p:Configuration=Release `
             /p:Platform=x64 `
+            /p:TargetFramework=net48 `
             /p:Version=${{ steps.v.outputs.version }} `
             /p:FileVersion=${{ steps.v.outputs.numver }}.0 `
             /p:AssemblyVersion=${{ steps.v.outputs.numver }}.0 `
@@ -232,5 +233,167 @@ jobs:
         with:
           name: flare-windows-x64-${{ steps.v.outputs.version }}
           path: native/windows/dist/flare-*-setup.exe
+          if-no-files-found: error
+          retention-days: 30
+
+  # ==========================================================================
+  # Win7 兼容版：.NET 6 自包含发布，把运行时整个打进安装包
+  #
+  # 为什么需要它：标准版依赖系统自带的 .NET Framework 4.8，而 Windows 7 SP1
+  # 只带 3.5.1。装 4.8 要先补 SHA-2 补丁链（KB4490628 → KB4474419）再管理员安装
+  # 再重启，Win7 上失败率高到不可接受（真实用户就卡在「缺少 .NET Framework v4.8」）。
+  # 而 .NET 8 桌面运行时同样是「让用户先装 55MB」的另一条坑。
+  # .NET 6 自包含把 CoreCLR + WPF + UCRT 全随包携带，Win7 SP1 裸机零依赖运行，
+  # 不需要管理员、不需要重启、不需要联网装任何东西。
+  #
+  # 两个版本并存，装到同一目录，二选一安装（换版本先卸载）。
+  # ==========================================================================
+  compat:
+    runs-on: windows-latest      # x64
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 版本号
+        id: v
+        shell: pwsh
+        run: |
+          if ("${{ github.event.inputs.version }}") {
+            $v = "${{ github.event.inputs.version }}"
+          } elseif ("${{ github.ref_type }}" -eq "tag") {
+            $v = "${{ github.ref_name }}" -replace '^v',''
+          } else {
+            $m = Select-String -Path 'CMakeLists.txt' -Pattern 'project\(flare-client VERSION ([0-9]+\.[0-9]+\.[0-9]+)' | Select-Object -First 1
+            if ($m) { $base = $m.Matches[0].Groups[1].Value } else { $base = '0.0.0' }
+            $v = "$base-dev." + "${{ github.sha }}".Substring(0,7)
+          }
+          if ($v -match '^(\d+)\.(\d+)\.(\d+)$' -or $v -match '^(\d+)\.(\d+)\.(\d+)[-.+]') {
+            $num = "$($matches[1]).$($matches[2]).$($matches[3])"
+          } else {
+            $num = "0.0.$env:GITHUB_RUN_NUMBER"
+          }
+          "version=$v" >> $env:GITHUB_OUTPUT
+          "numver=$num" >> $env:GITHUB_OUTPUT
+          Write-Host "VERSION=$v NUMVER=$num"
+
+      # ---------- 引擎（Go / windows amd64，与标准版同源） ----------
+      - name: 取引擎源码
+        shell: pwsh
+        env:
+          ENGINE_SSH_KEY: ${{ secrets.ENGINE_SSH_KEY }}
+        run: |
+          $dir = "$env:USERPROFILE\.ssh"
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          ssh-keyscan -t ed25519 github.com 2>$null | Out-File -Append -Encoding ascii "$dir\known_hosts"
+          $key = ($env:ENGINE_SSH_KEY -replace "`r","").TrimEnd("`n") + "`n"
+          [System.IO.File]::WriteAllText("$dir\engine_key", $key)
+          icacls "$dir\engine_key" /inheritance:r /grant:r "${env:USERNAME}:R" | Out-Null
+          git config --global core.sshCommand "ssh -i `"$dir/engine_key`" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+          git clone --depth 1 git@github.com:raymond202202/flare.git engine
+          if ($LASTEXITCODE -ne 0) { throw "引擎仓 clone 失败" }
+          Push-Location engine; Write-Host "engine commit: $(git rev-parse --short HEAD)"; Pop-Location
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: engine/go.mod
+          cache-dependency-path: engine/go.sum
+
+      - name: 编译引擎（windows/amd64）
+        shell: pwsh
+        run: |
+          Push-Location engine
+          $env:CGO_ENABLED = "0"
+          $env:GOOS = "windows"
+          $env:GOARCH = "amd64"
+          # GOAMD64=v1：Win7 时代的 CPU 多为不支持的 AVX2 老型号，v2/v3 会直接 illegal instruction
+          $env:GOAMD64 = "v1"
+          go build -trimpath -ldflags "-s -w" -o "../native/windows/engine/flare.exe" ./cmd/flare
+          if ($LASTEXITCODE -ne 0) { throw "引擎编译失败" }
+          Pop-Location
+          & ./native/windows/engine/flare.exe --version
+
+      # 静态导入表只有 kernel32.dll 才敢说「Win7 能跑」：Go 的 bcrypt.dll / ws2_32.dll
+      # 全是延迟加载，缺了不会在启动时炸。这里把事实打印出来留档。
+      - name: 引擎 PE 依赖取证
+        shell: pwsh
+        run: |
+          $b = [System.IO.File]::ReadAllBytes("native/windows/engine/flare.exe")
+          $txt = [System.Text.Encoding]::ASCII.GetString($b)
+          foreach ($m in @('bcryptprimitives.dll','ProcessPrng','bcrypt.dll','kernel32.dll')) {
+            $hit = $txt.Contains($m)
+            Write-Host ("{0,-22} : {1}" -f $m, $hit)
+          }
+          if ($txt.Contains('bcryptprimitives.dll')) { throw "引擎硬依赖 bcryptprimitives.dll（Win8+ 独有），Win7 无法运行" }
+
+      # ---------- 客户端（WPF / net6.0-windows 自包含） ----------
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '6.0.x'
+
+      - name: 发布自包含 WPF（net6.0-windows）
+        shell: pwsh
+        run: |
+          $pkg = "native/windows/dist/compat-pkg"
+          Remove-Item -Recurse -Force native/windows/dist -ErrorAction SilentlyContinue
+          dotnet publish native/windows/FlareWin.csproj `
+            -c Release `
+            -f net6.0-windows `
+            -r win-x64 `
+            --self-contained true `
+            -p:EnableWindowsTargeting=true `
+            -p:Version=${{ steps.v.outputs.numver }} `
+            -p:FileVersion=${{ steps.v.outputs.numver }}.0 `
+            -p:AssemblyVersion=${{ steps.v.outputs.numver }}.0 `
+            -o $pkg
+          if ($LASTEXITCODE -ne 0) { throw "自包含发布失败" }
+
+      - name: 精简运行时体积
+        shell: pwsh
+        run: |
+          $pkg = "native/windows/dist/compat-pkg"
+          # WPF 不引用的 WinForms 与诊断组件，删掉省 ~15MB
+          $junk = @(
+            'System.Windows.Forms.dll','System.Windows.Forms.Design.dll',
+            'System.Windows.Forms.Primitives.dll','System.Windows.Forms.DataVisualization.dll',
+            'mscordaccore.dll','mscordbi.dll','createdump.exe',
+            'Microsoft.DiaSymReader.Native.amd64.dll','Accessibility.dll'
+          )
+          Get-ChildItem $pkg -Filter *.dll -ErrorAction SilentlyContinue |
+            Where-Object { $junk -contains $_.Name } | Remove-Item -Force
+          Get-ChildItem $pkg -Filter 'mscordaccore_amd64_amd64_*.dll' -ErrorAction SilentlyContinue | Remove-Item -Force
+          Get-ChildItem $pkg -Filter *.pdb -ErrorAction SilentlyContinue | Remove-Item -Force
+          # 删除后必须还能自检：缺了 coreclr/hostfxr 说明删过头
+          foreach ($f in @('Flare.exe','coreclr.dll','hostfxr.dll','PresentationFramework.dll','ucrtbase.dll')) {
+            if (-not (Test-Path "$pkg/$f")) { throw "精简后缺少关键文件: $f" }
+          }
+          if (-not (Test-Path "$pkg/engine/flare.exe")) { throw "engine/flare.exe 未随发布输出，检查 csproj 的 None Update 规则" }
+          Copy-Item "native/windows/README-WIN7.txt" "$pkg/README.txt"
+          $sz = (Get-ChildItem -Recurse $pkg | Measure-Object -Property Length -Sum).Sum
+          Write-Host ("解包后体积: {0:N1} MB / {1} 个文件" -f ($sz/1MB), (Get-ChildItem -Recurse -File $pkg).Count)
+
+      - name: NSIS 打包（兼容版）
+        shell: pwsh
+        run: |
+          $mk = "C:\Program Files (x86)\NSIS\makensis.exe"
+          if (-not (Test-Path $mk)) { choco install nsis -y --no-progress | Out-Null }
+          if (-not (Test-Path $mk)) { throw "找不到 makensis" }
+          Push-Location native/windows
+          & $mk -INPUTCHARSET UTF8 `
+            "-DVERSION=${{ steps.v.outputs.version }}" `
+            "-DNUMVERSION=${{ steps.v.outputs.numver }}" `
+            "-DSRCDIR=dist/compat-pkg" `
+            "-DOUTDIR=dist" `
+            installer-compat.nsi
+          if ($LASTEXITCODE -ne 0) { throw "NSIS 打包失败" }
+          Pop-Location
+          $setup = "native/windows/dist/flare-${{ steps.v.outputs.version }}-win-x64-compat-setup.exe"
+          if (-not (Test-Path $setup)) { throw "兼容版安装包未生成" }
+          Write-Host ("兼容版安装包: {0:N1} MB" -f ((Get-Item $setup).Length/1MB))
+
+      - name: 上传兼容版安装包
+        uses: actions/upload-artifact@v4
+        with:
+          name: flare-windows-x64-compat-${{ steps.v.outputs.version }}
+          path: native/windows/dist/flare-*-compat-setup.exe
           if-no-files-found: error
           retention-days: 30

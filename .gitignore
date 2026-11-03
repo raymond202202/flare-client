@@ -31,3 +31,8 @@ native/*/build/
 
 # 本地打包时现编的引擎二进制（不入库，CI 各自现编）
 /dist/
+
+# .NET 中间产物与安装包输出
+native/windows/bin/
+native/windows/obj/
+native/windows/dist/

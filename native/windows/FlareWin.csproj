@@ -14,7 +14,14 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net48</TargetFramework>
+    <!-- 双目标框架，一套源码出两个安装包：
+           net48          = 标准版，靠 Win10 1809+/Win11 自带的运行时，包 ~4MB
+           net6.0-windows = Win7 兼容版，自包含发布把 CoreCLR+WPF+UCRT 全打进包，
+                            Win7 SP1 裸机免装任何组件，包 ~41MB
+         net6.0-windows（不带 7.0/10.0 后缀）等价于最低 Windows 7，这正是兼容版的目标平台。
+         .NET 6 是最后一个支持 Win7 SP1 的桌面运行时；它已 EOL，但没有安全风险面扩大：
+         所有网络与 LLM 通信都在独立的 Go 引擎进程里，这个壳只做 UI + 本地 IPC。 -->
+    <TargetFrameworks>net48;net6.0-windows</TargetFrameworks>
     <UseWPF>true</UseWPF>
     <PlatformTarget>x64</PlatformTarget>
     <Platforms>x64</Platforms>
@@ -39,8 +46,26 @@
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
   </PropertyGroup>
 
+  <!-- 兼容版（自包含）专属：net48 分支不要这些属性，否则 msbuild 会去解析 RID -->
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net6.0-windows'">
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <!-- 不开 InvariantGlobalization：Windows 上 .NET 走 NLS 不打包 ICU，省不了体积，
+         却会把日期/数字格式化变成英文习惯，中文界面反而变味 -->
+    <!-- 允许在 Linux/macOS 上交叉发布（CI 与本地构建都用得上） -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
+  <!-- net48 的引用程序集作为 NuGet 包显式引入：
+       多目标框架项目 restore 会同时 restore net48 与 net6.0-windows，
+       而兼容版 job 跑的是 .NET 6 SDK，未必带 4.8 targeting pack。
+       显式引入后任何 SDK / 任何操作系统都能 restore 通过，不依赖 VS 装了什么。 -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
   </ItemGroup>
 
   <!-- 内置引擎目录：build.ps1 把 flare.exe 拷到 engine\ 下，此处仅标记为内容不入编译 -->
