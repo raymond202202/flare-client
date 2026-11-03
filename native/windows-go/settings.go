@@ -91,9 +91,9 @@ func saveAPIKey(key string) error {
 			if i := strings.Index(t, "="); i > 0 {
 				name = strings.TrimSpace(t[:i])
 			}
-			switch name {
-			case "LLM_API_KEY", "DEEPSEEK_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "LLM_MODEL":
-				continue // 由这里统一重写
+			// 只重写这两项，其余（含 DEEPSEEK_API_KEY 等）原样保留
+			if name == "LLM_API_KEY" || name == "LLM_MODEL" {
+				continue
 			}
 			keep = append(keep, ln)
 		}
@@ -111,7 +111,14 @@ func saveAPIKey(key string) error {
 func layoutSetup(cr RECT) {
 	left := int32(sidebarW) + pad*3
 	top := int32(titleBarH + 56)
-	rcKeyEdit = RECT{left, top + 96, left + 440, top + 130}
+
+	// 输入框宽度跟着窗口走，绝不写死：窗口被缩到最小时也不能出屏
+	w := cr.Right - left - pad*3
+	if w < 260 {
+		w = 260
+	}
+
+	rcKeyEdit = RECT{left, top + 96, left + w, top + 130}
 	rcSaveKey = RECT{left, top + 152, left + 108, top + 190}
 	rcCancelKey = RECT{left + 120, top + 152, left + 228, top + 190}
 }

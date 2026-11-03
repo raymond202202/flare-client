@@ -3,6 +3,7 @@ package main
 
 import (
 	"strconv"
+	"strings"
 	"syscall"
 	"unsafe"
 )
@@ -577,6 +578,14 @@ func wndProc(h syscall.Handle, msg uint32, wp, lp uintptr) uintptr {
 
 	case wmEngineDead:
 		st.Status = "引擎已退出"
+		if eng.errTail != nil {
+			if t := strings.TrimSpace(eng.errTail.String()); t != "" {
+				if r := []rune(t); len(r) > 90 {
+					t = string(r[len(r)-90:])
+				}
+				st.Status = "引擎已退出：" + t
+			}
+		}
 		st.Busy = false
 		pInvalidateRect.Call(uintptr(h), 0, 0)
 		return 0
