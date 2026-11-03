@@ -81,6 +81,21 @@ jobs:
           go-version-file: engine/go.mod
           cache-dependency-path: engine/go.sum
 
+      # 引擎硬依赖 bcryptprimitives.dll（Win10 1607+ 独有），Win7 一启动就
+      # throw "bcryptprimitives.dll not found"。补丁把该 DLL 缺失时的路径改走
+      # advapi32!SystemFunction036（RtlGenRandom，XP 起就有），Win10+ 行为不变。
+      # 新装包（net452 壳）已经能进 Win7 了，引擎这一层不补上等于进门就崩，
+      # 所以补丁必须进主包，不再只给兼容版。
+      - name: 引擎打 Win7 兼容补丁（GOROOT runtime）
+        shell: pwsh
+        run: |
+          $goroot = (go env GOROOT).Trim()
+          Write-Host "GOROOT = $goroot"
+          python engine/tools/patch-goroot-win7.py $goroot
+          if ($LASTEXITCODE -ne 0) { throw "GOROOT 补丁失败：引擎仓库缺 tools/patch-goroot-win7.py，或 Go 版本变了补丁锚点失效" }
+          python engine/tools/patch-goroot-win7.py --check $goroot
+          if ($LASTEXITCODE -ne 0) { throw "GOROOT 补丁自检未通过" }
+
       - name: 编译引擎（windows/amd64）
         shell: pwsh
         run: |
@@ -88,12 +103,36 @@ jobs:
           $env:CGO_ENABLED = "0"
           $env:GOOS = "windows"
           $env:GOARCH = "amd64"
+          # GOTOOLCHAIN=local：否则 go.mod 里的版本号可能触发下载另一套工具链，
+          # 绕过我们刚打过补丁的 GOROOT
+          $env:GOTOOLCHAIN = "local"
+          # GOAMD64=v1：Win7 时代的 CPU 多为不支持的 AVX2 老型号，v2/v3 会直接 illegal instruction
+          $env:GOAMD64 = "v1"
           go build -trimpath -ldflags "-s -w" -o "../native/windows/engine/flare.exe" ./cmd/flare
           if ($LASTEXITCODE -ne 0) { throw "引擎编译失败" }
           Pop-Location
           & ./native/windows/engine/flare.exe --version
 
-      # ---------- 客户端（WPF / net48） ----------
+      # 断言「Win7 回退路径在」且「致命 throw 已消失」。
+      # 不要反过来断言「不能含 bcryptprimitives.dll」—— Win10+ 仍要优先走
+      # ProcessPrng，那个断言必然失败，失败原因在守卫本身（踩过）。
+      - name: 引擎 PE 依赖取证（Win7 兼容）
+        shell: pwsh
+        run: |
+          $b = [System.IO.File]::ReadAllBytes("native/windows/engine/flare.exe")
+          $txt = [System.Text.Encoding]::ASCII.GetString($b)
+          foreach ($m in @('SystemFunction036','advapi32.dll','ProcessPrng','bcryptprimitives.dll','bcryptprimitives.dll not found','kernel32.dll')) {
+            Write-Host ("{0,-32} : {1}" -f $m, $txt.Contains($m))
+          }
+          if (-not $txt.Contains('SystemFunction036')) {
+            throw "引擎未打 Win7 兼容补丁：二进制里找不到 advapi32!SystemFunction036 回退路径"
+          }
+          if ($txt.Contains('bcryptprimitives.dll not found')) {
+            throw "引擎仍保留 throw(bcryptprimitives.dll not found)：Win7 一启动就崩"
+          }
+          Write-Host "OK: 含 Win7 回退路径；Win10+ 仍走 bcryptprimitives!ProcessPrng"
+
+      # ---------- 客户端（WPF / net452） ----------
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
 
@@ -104,7 +143,7 @@ jobs:
             /restore `
             /p:Configuration=Release `
             /p:Platform=x64 `
-            /p:TargetFramework=net48 `
+            /p:TargetFramework=net452 `
             /p:Version=${{ steps.v.outputs.version }} `
             /p:FileVersion=${{ steps.v.outputs.numver }}.0 `
             /p:AssemblyVersion=${{ steps.v.outputs.numver }}.0 `
@@ -114,9 +153,9 @@ jobs:
       - name: 组装安装包源目录
         shell: pwsh
         run: |
-          $bin = Get-ChildItem -Recurse -Directory -Filter net48 native/windows/bin |
+          $bin = Get-ChildItem -Recurse -Directory -Filter net452 native/windows/bin |
                  Where-Object { $_.FullName -match 'Release' } | Select-Object -First 1
-          if (-not $bin) { throw "找不到 bin\Release\net48 输出目录" }
+          if (-not $bin) { throw "找不到 bin\Release\net452 输出目录" }
           Write-Host "输出目录: $($bin.FullName)"
           $pkg = "native/windows/dist/pkg"
           Remove-Item -Recurse -Force native/windows/dist -ErrorAction SilentlyContinue
@@ -127,7 +166,7 @@ jobs:
           if (-not (Test-Path "$pkg/engine/flare.exe")) {
             Copy-Item "native/windows/engine/flare.exe" "$pkg/engine"
           }
-          # net48 项目没 App.config 时不会生成 Flare.exe.config，NSIS 里 File 指令要求它存在
+          # net452 项目没 App.config 时不会生成 Flare.exe.config，NSIS 里 File 指令要求它存在
           if (Test-Path "$($bin.FullName)\Flare.exe.config") {
             Copy-Item "$($bin.FullName)\Flare.exe.config" $pkg
           } else {
@@ -192,7 +231,7 @@ jobs:
 
       # 峰值工作集采样：单独起一次实例，只测内存不出图，避免与上面的截图轮次
       # 抢资源导致数字失真。net48 壳 vs net6 自包含壳在相同的 DEMO 数据集下对比。
-      - name: 内存采样（标准版 / WPF net48）
+      - name: 内存采样（标准版 / WPF net452）
         shell: pwsh
         run: |
           $pkg   = "native/windows/dist/pkg"

@@ -2,9 +2,13 @@
 ; Flare Windows 安装向导（NSIS 3 / Unicode）
 ;
 ; 设计原则（用户要求「把用户当傻子」）：
-;   · 零依赖：不需要 .NET 8 Desktop Runtime、不需要 Node，Win10 1809+ 自带 4.8
+;   · 零依赖：不需要 .NET 8 Desktop Runtime、不需要 Node
+;     壳是 net452 编译的：Win7 SP1 只要系统里有任意 .NET 4.5.2+ 就能跑
+;     （Win10/11 自带 4.6+，Win7 上过 Windows Update 的基本都有 4.5.2/4.6.2/4.7.2）
+;     以前是 net48，会在 Win7 上弹「需要 .NET Framework v4.8」，现在不会了
 ;   · 零提权：装到 %LOCALAPPDATA%\Flare，RequestExecutionLevel user，不弹 UAC
 ;   · 零配置：装完直接能从开始菜单/桌面双击启动，引擎已内置在 engine\flare.exe
+;     引擎含 Win7 随机数回退补丁（bcryptprimitives.dll 缺失时走 advapi32），Win7 不崩
 ;   · 可干净卸载：只写 HKCU，卸载器删目录与快捷方式，不留残渣
 ;
 ; 构建：makensis -INPUTCHARSET UTF8 -DVERSION=0.6.163 -DSRCDIR=dist\pkg installer.nsi
